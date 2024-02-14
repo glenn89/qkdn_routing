@@ -133,7 +133,7 @@ class QuantumEnvironment:
         self.num_seed = seed
         np.random.seed(self.num_seed)
 
-        self.topology_conf = topology_conf.nsfnet_topo
+        self.topology_conf = topology_conf.cost266_topo
         self.generate_key_time_slot = 15
         self.generate_key_size = 10
         self.consume_key_size = 4
@@ -196,8 +196,8 @@ class QuantumEnvironment:
         if len(subnet.edges) == 0 or not nx.has_path(subnet, source=current_node, target=target_node):
             return []
 
-        # routing_path = nx.shortest_path(subnet, current_node, target_node, weight)
-        routing_path = nx.shortest_path(subnet, current_node, target_node)
+        routing_path = nx.shortest_path(subnet, current_node, target_node, weight)
+        # routing_path = nx.shortest_path(subnet, current_node, target_node)
 
         return routing_path
 
@@ -240,7 +240,7 @@ class QuantumEnvironment:
             # routing_path = nx.shortest_path(subnet, 0, 5)
             for edge in subnet.edges:
                 subnet[edge[0]][edge[1]]['weight'] = 1 / subnet[edge[0]][edge[1]]['num_key']
-            routing_path = nx.shortest_path(subnet, current_node, target_node, 'qber')
+            routing_path = nx.shortest_path(subnet, current_node, target_node, 'weight')
 
             # print(current_node, target_node)
             # print(routing_path)
@@ -298,7 +298,7 @@ class QuantumEnvironment:
 
         # Using QBER + Num_key
         if self.metric_type == 'combination':
-            shortest_routing_path = self.temp_shrotest_path(current_node, target_node, 'num_key')
+            shortest_routing_path = self.temp_shrotest_path(current_node, target_node, 'qber')
             while current_node != target_node:
                 neighbor_nodes = [node for node in self.G.neighbors(current_node) if
                                   self.G[current_node][node]['num_key'] > 0 and
@@ -327,9 +327,8 @@ class QuantumEnvironment:
                 )
                 routing_path.append(selected_node)
                 current_node = selected_node
-            if len(shortest_routing_path) * 1.5 < len(routing_path):
+            if len(shortest_routing_path) != 0 and len(shortest_routing_path) * 1.5 < len(routing_path):
                 routing_path = shortest_routing_path
-            # print("!!!!!!", shortest_routing_path, routing_path)
 
 
         # if self.metric_type == 'combination':
@@ -379,7 +378,7 @@ class QuantumEnvironment:
 
         if self.metric_type == 'num_key':
             if current_num_key == 0:
-                current_num_key = 0.0001
+                current_num_key = 10000
             if len(accumulate_count_rate) == 0:
                 num_key_weight = 1 / current_num_key
             else:
@@ -405,7 +404,7 @@ class QuantumEnvironment:
 
             # Calculate num_key weight
             if current_num_key == 0:
-                current_num_key = 0.0001
+                current_num_key = 10000
             if len(accumulate_count_rate) == 0:
                 num_key_weight = 1 / current_num_key
             else:
