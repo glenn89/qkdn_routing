@@ -3,13 +3,13 @@ import numpy as np
 
 ################### Butterfly topology ###################
 mean_value = 5
-std_deviation = 3
+std_deviation = 4
 init_qber = np.random.normal(mean_value, std_deviation, size=18)
 init_qber = np.round(np.clip(init_qber, 1, 10))
 init_count_rate = np.random.randint(1, 4, size=18) * 100
 
 butterfly_topo = {
-    'NAME': "CLASSIC_GRID_TOPO",
+    'NAME': "BUTTERFLY",
     'QKD_NODES': [0, 1, 2, 3, 4, 5],
     'QKD_NODES_NAME': {0: 'A', 1: 'B', 2: 'C', 3: 'D', 4: 'E', 5: 'F'},
     'QKD_NODES_COLOR_MAP': ['red', 'green', 'green', 'green', 'green', 'yellow'],
@@ -31,7 +31,7 @@ butterfly_topo = {
 
 ################### KREONET topology ###################
 mean_value = 5
-std_deviation = 3
+std_deviation = 4
 init_qber = np.random.normal(mean_value, std_deviation, size=34)
 init_qber = np.round(np.clip(init_qber, 1, 10))
 init_num_key = np.zeros(34)
@@ -72,7 +72,7 @@ kreonet_topo = {
 
 ################### NSFNET topology ###################
 mean_value = 5
-std_deviation = 3
+std_deviation = 4
 init_qber = np.random.normal(mean_value, std_deviation, size=44)
 init_qber = np.round(np.clip(init_qber, 1, 10))
 init_num_key = np.zeros(44)

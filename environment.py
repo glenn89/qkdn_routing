@@ -76,8 +76,9 @@ class QuantumEnvironment:
                         1 + error_rate * np.log2(error_rate) + (1 - error_rate) * np.log2(1 - error_rate), 0
                     )
                 )
-                if edge[0] == 0 or edge[1] == 5:
-                    generated_keys += 10
+                if self.topology_conf['NAME'] == 'BUTTERFLY':
+                    if edge[0] == 0 or edge[1] == 5:
+                        generated_keys += 10
                 self.G[edge[0]][edge[1]]['num_key'] += generated_keys
                 self.total_generation_keys += generated_keys
             except ValueError as e:
@@ -133,7 +134,7 @@ class QuantumEnvironment:
         np.random.seed(self.num_seed)
 
         self.topology_conf = topology_conf.nsfnet_topo
-        self.generate_key_time_slot = 10
+        self.generate_key_time_slot = 15
         self.generate_key_size = 10
         self.consume_key_size = 4
 
@@ -143,7 +144,7 @@ class QuantumEnvironment:
         self.remaining_keys = 0
         self.used_keys = 0
         self.reward = 0
-        self.alpha = 0.001
+        self.alpha = 0.0001
 
         self.generate_topology()
         self.node_num_heat = np.zeros((len(self.G), len(self.G)))
@@ -185,9 +186,25 @@ class QuantumEnvironment:
 
         return self.reward, info
 
+    def temp_shrotest_path(self, current_node, target_node, weight):
+        copied_G = copy.deepcopy(self.G)
+        subnet = nx.subgraph_view(
+            copied_G,
+            filter_edge=lambda node_1_id, node_2_id: \
+                True if copied_G.edges[(node_1_id, node_2_id)]['num_key'] >= self.consume_key_size else False
+        )
+        if len(subnet.edges) == 0 or not nx.has_path(subnet, source=current_node, target=target_node):
+            return []
+
+        # routing_path = nx.shortest_path(subnet, current_node, target_node, weight)
+        routing_path = nx.shortest_path(subnet, current_node, target_node)
+
+        return routing_path
+
     def find_routing_path(self):
         # current_node, target_node = random.sample(range(0, self.topology_conf['NUM_QKD_NODE']), 2)
         current_node, target_node = np.random.choice(np.arange(0, self.topology_conf['NUM_QKD_NODE']), size=2, replace=False)
+        # current_node, target_node = 0, 4
         accumulate_qber = []
         accumulate_num_key = []
         accumulate_count_rate = []
@@ -281,6 +298,7 @@ class QuantumEnvironment:
 
         # Using QBER + Num_key
         if self.metric_type == 'combination':
+            shortest_routing_path = self.temp_shrotest_path(current_node, target_node, 'num_key')
             while current_node != target_node:
                 neighbor_nodes = [node for node in self.G.neighbors(current_node) if
                                   self.G[current_node][node]['num_key'] > 0 and
@@ -309,8 +327,13 @@ class QuantumEnvironment:
                 )
                 routing_path.append(selected_node)
                 current_node = selected_node
+            if len(shortest_routing_path) * 1.5 < len(routing_path):
+                routing_path = shortest_routing_path
+            # print("!!!!!!", shortest_routing_path, routing_path)
 
-        # print("Final routing path: ", routing_path)
+
+        # if self.metric_type == 'combination':
+        #     print("Final routing path: ", routing_path)
         # Consumed quantum key
         for i in range(len(routing_path) - 1):
             self.G[routing_path[i]][routing_path[i+1]]['num_key'] -= self.consume_key_size
@@ -400,7 +423,7 @@ class QuantumEnvironment:
 
 if __name__ == "__main__":
     env = QuantumEnvironment()
-    num_episode = 200
+    num_episode = 250
     num_simulation = 10
     seed = 0
 
