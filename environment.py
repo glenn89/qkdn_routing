@@ -27,6 +27,7 @@ class QuantumEnvironment:
         self.reward = 0
         self.mean_value = 0
         self.std_deviation = 0
+        self.count = 0
 
     def generate_topology(self):
         self.G = nx.Graph()
@@ -133,8 +134,8 @@ class QuantumEnvironment:
         self.num_seed = seed
         np.random.seed(self.num_seed)
 
-        self.topology_conf = topology_conf.cost266_topo
-        self.generate_key_time_slot = 15
+        self.topology_conf = topology_conf.nsfnet_topo
+        self.generate_key_time_slot = 10
         self.generate_key_size = 10
         self.consume_key_size = 4
 
@@ -148,10 +149,13 @@ class QuantumEnvironment:
 
         self.generate_topology()
         self.node_num_heat = np.zeros((len(self.G), len(self.G)))
+        self.count = 0
         # print(self.node_num_heat)
 
     def step(self):
         info = {}
+        self.consume_key_size = max(int(np.random.normal(4, 2)), 1)
+
         routing_path = self.find_routing_path()
         # if self.metric_type == 'num_key':
         #     print("time step: ", self.time_step, "routing path: ", routing_path)
@@ -196,6 +200,8 @@ class QuantumEnvironment:
         if len(subnet.edges) == 0 or not nx.has_path(subnet, source=current_node, target=target_node):
             return []
 
+        for edge in subnet.edges:
+            subnet[edge[0]][edge[1]]['weight'] = 1 / subnet[edge[0]][edge[1]]['num_key']
         routing_path = nx.shortest_path(subnet, current_node, target_node, weight)
         # routing_path = nx.shortest_path(subnet, current_node, target_node)
 
@@ -203,8 +209,8 @@ class QuantumEnvironment:
 
     def find_routing_path(self):
         # current_node, target_node = random.sample(range(0, self.topology_conf['NUM_QKD_NODE']), 2)
-        current_node, target_node = np.random.choice(np.arange(0, self.topology_conf['NUM_QKD_NODE']), size=2, replace=False)
-        # current_node, target_node = 0, 4
+        # current_node, target_node = np.random.choice(np.arange(0, self.topology_conf['NUM_QKD_NODE']), size=2, replace=False)
+        current_node, target_node = 0, 13
         accumulate_qber = []
         accumulate_num_key = []
         accumulate_count_rate = []
@@ -216,16 +222,10 @@ class QuantumEnvironment:
         # routing_path = nx.shortest_path(self.G, source=0, target=5, weight='num_key')
 
         if self.metric_type == 'simple_shortest':
-            copied_G = copy.deepcopy(self.G)
-            subnet = nx.subgraph_view(
-                copied_G,
-                filter_edge=lambda node_1_id, node_2_id: \
-                    True if copied_G.edges[(node_1_id, node_2_id)]['num_key'] >= self.consume_key_size else False
-            )
-            if len(subnet.edges) == 0 or not nx.has_path(subnet, source=current_node, target=target_node):
-                return []
-
-            routing_path = nx.shortest_path(subnet, current_node, target_node)
+            routing_path = nx.shortest_path(self.G, current_node, target_node)
+            for i in range(len(routing_path) - 1):
+                if self.G[routing_path[i]][routing_path[i + 1]]['num_key'] < self.consume_key_size:
+                    return []
 
         if self.metric_type == 'weighted_shortest':
             copied_G = copy.deepcopy(self.G)
@@ -242,14 +242,9 @@ class QuantumEnvironment:
                 subnet[edge[0]][edge[1]]['weight'] = 1 / subnet[edge[0]][edge[1]]['num_key']
             routing_path = nx.shortest_path(subnet, current_node, target_node, 'weight')
 
-            # print(current_node, target_node)
-            # print(routing_path)
-            # nx.draw(subnet, with_labels=True)
-            # plt.show()
-            # print()
-
         # Using QBER
         if self.metric_type == 'qber':
+            # shortest_routing_path = self.temp_shrotest_path(current_node, target_node, 'weight')
             while current_node != target_node:
                 neighbor_nodes = [node for node in self.G.neighbors(current_node) if
                                   self.G[current_node][node]['num_key'] > 0 and
@@ -272,8 +267,12 @@ class QuantumEnvironment:
                 routing_path.append(selected_node)
                 current_node = selected_node
 
+            # if len(shortest_routing_path) != 0 and len(shortest_routing_path) * 2 < len(routing_path):
+            #     routing_path = shortest_routing_path
+
         # Using Num_key
         if self.metric_type == 'num_key':
+            # shortest_routing_path = self.temp_shrotest_path(current_node, target_node, 'weight')
             while current_node != target_node:
                 neighbor_nodes = [node for node in self.G.neighbors(current_node) if
                                   self.G[current_node][node]['num_key'] > 0 and
@@ -296,9 +295,12 @@ class QuantumEnvironment:
                 routing_path.append(selected_node)
                 current_node = selected_node
 
+            # if len(shortest_routing_path) != 0 and len(shortest_routing_path) * 2 < len(routing_path):
+            #     routing_path = shortest_routing_path
+
         # Using QBER + Num_key
         if self.metric_type == 'combination':
-            shortest_routing_path = self.temp_shrotest_path(current_node, target_node, 'qber')
+            # shortest_routing_path = self.temp_shrotest_path(current_node, target_node, 'weight')
             while current_node != target_node:
                 neighbor_nodes = [node for node in self.G.neighbors(current_node) if
                                   self.G[current_node][node]['num_key'] > 0 and
@@ -327,8 +329,10 @@ class QuantumEnvironment:
                 )
                 routing_path.append(selected_node)
                 current_node = selected_node
-            if len(shortest_routing_path) != 0 and len(shortest_routing_path) * 1.5 < len(routing_path):
-                routing_path = shortest_routing_path
+            # if len(shortest_routing_path) != 0 and len(shortest_routing_path) * 2.5 < len(routing_path):
+            #     routing_path = shortest_routing_path
+            #     self.count += 1
+            # print(self.count)
 
 
         # if self.metric_type == 'combination':
