@@ -28,6 +28,8 @@ class QuantumEnvironment:
         self.mean_value = 0
         self.std_deviation = 0
         self.count = 0
+        self.cumulative_size = 1
+        self.cumulative_edge_keys = None
 
     def generate_topology(self):
         self.G = nx.Graph()
@@ -134,10 +136,12 @@ class QuantumEnvironment:
         self.num_seed = seed
         np.random.seed(self.num_seed)
 
-        self.topology_conf = topology_conf.nsfnet_topo
-        self.generate_key_time_slot = 10
+        self.topology_conf = topology_conf.cost266_topo
+        self.generate_key_time_slot = 15
         self.generate_key_size = 10
         self.consume_key_size = 4
+        self.consume_mean = 5
+        self.consume_std_dev = 2
 
         self.time_step = 0
         self.session_blocking = 0
@@ -150,11 +154,22 @@ class QuantumEnvironment:
         self.generate_topology()
         self.node_num_heat = np.zeros((len(self.G), len(self.G)))
         self.count = 0
-        # print(self.node_num_heat)
+        self.cumulative_size = 5
+        self.cumulative_edge_keys = {}
+        for edge in self.G.edges:
+            self.cumulative_edge_keys[edge] = []
 
     def step(self):
         info = {}
-        self.consume_key_size = max(int(np.random.normal(4, 2)), 1)
+        self.consume_key_size = max(int(np.random.normal(self.consume_mean, self.consume_std_dev)), 1)
+
+        # Cumulative edge key at cumulative size
+        for edge in self.G.edges:
+            if len(self.cumulative_edge_keys[edge]) < 6:
+                self.cumulative_edge_keys[edge].append(self.G[edge[0]][edge[1]]['num_key'])
+            else:
+                self.cumulative_edge_keys[edge].pop(0)
+                self.cumulative_edge_keys[edge].append(self.G[edge[0]][edge[1]]['num_key'])
 
         routing_path = self.find_routing_path()
         # if self.metric_type == 'num_key':
@@ -202,7 +217,7 @@ class QuantumEnvironment:
 
         for edge in subnet.edges:
             subnet[edge[0]][edge[1]]['weight'] = 1 / subnet[edge[0]][edge[1]]['num_key']
-        routing_path = nx.shortest_path(subnet, current_node, target_node, weight)
+        routing_path = nx.astar_path(subnet, current_node, target_node, None, weight)
         # routing_path = nx.shortest_path(subnet, current_node, target_node)
 
         return routing_path
@@ -226,6 +241,19 @@ class QuantumEnvironment:
             for i in range(len(routing_path) - 1):
                 if self.G[routing_path[i]][routing_path[i + 1]]['num_key'] < self.consume_key_size:
                     return []
+            # copied_G = copy.deepcopy(self.G)
+            # subnet = nx.subgraph_view(
+            #     copied_G,
+            #     filter_edge=lambda node_1_id, node_2_id: \
+            #         True if copied_G.edges[(node_1_id, node_2_id)]['num_key'] >= self.consume_key_size else False
+            # )
+            # if len(subnet.edges) == 0 or not nx.has_path(subnet, source=current_node, target=target_node):
+            #     return []
+            #
+            # # routing_path = nx.shortest_path(subnet, 0, 5)
+            # for edge in subnet.edges:
+            #     subnet[edge[0]][edge[1]]['weight'] = 1 / subnet[edge[0]][edge[1]]['num_key']
+            # routing_path = nx.astar_path(subnet, current_node, target_node, None, 'weight')
 
         if self.metric_type == 'weighted_shortest':
             copied_G = copy.deepcopy(self.G)
@@ -267,7 +295,7 @@ class QuantumEnvironment:
                 routing_path.append(selected_node)
                 current_node = selected_node
 
-            # if len(shortest_routing_path) != 0 and len(shortest_routing_path) * 2 < len(routing_path):
+            # if len(shortest_routing_path) != 0 and len(shortest_routing_path) * 2 <= len(routing_path):
             #     routing_path = shortest_routing_path
 
         # Using Num_key
@@ -295,7 +323,7 @@ class QuantumEnvironment:
                 routing_path.append(selected_node)
                 current_node = selected_node
 
-            # if len(shortest_routing_path) != 0 and len(shortest_routing_path) * 2 < len(routing_path):
+            # if len(shortest_routing_path) != 0 and len(shortest_routing_path) * 2 <= len(routing_path):
             #     routing_path = shortest_routing_path
 
         # Using QBER + Num_key
@@ -305,11 +333,8 @@ class QuantumEnvironment:
                 neighbor_nodes = [node for node in self.G.neighbors(current_node) if
                                   self.G[current_node][node]['num_key'] > 0 and
                                   self.G[current_node][node]['num_key'] >= self.consume_key_size]
-                # print(self.G.neighbors(current_node), neighbor_nodes, routing_path, loop_nodes)
                 neighbor_nodes = [node for node in neighbor_nodes if node not in routing_path]  # check in routing path
                 neighbor_nodes = [node for node in neighbor_nodes if node not in loop_nodes]  # check the loop
-                # print(neighbor_nodes)
-                # print()
 
                 if len(neighbor_nodes) == 0 and len(accumulate_count_rate) > 0:
                     loop_nodes.append(current_node)
@@ -329,11 +354,12 @@ class QuantumEnvironment:
                 )
                 routing_path.append(selected_node)
                 current_node = selected_node
-            # if len(shortest_routing_path) != 0 and len(shortest_routing_path) * 2.5 < len(routing_path):
+
+            # print("!!!!!!!!!!", len(routing_path), routing_path, len(shortest_routing_path), shortest_routing_path)
+            # if len(shortest_routing_path) != 0 and len(shortest_routing_path) * 2 <= len(routing_path):
             #     routing_path = shortest_routing_path
             #     self.count += 1
             # print(self.count)
-
 
         # if self.metric_type == 'combination':
         #     print("Final routing path: ", routing_path)
@@ -347,7 +373,7 @@ class QuantumEnvironment:
         current_edges = list(self.G.edges(current_node))
         for edge in current_edges:
             self.G[edge[0]][edge[1]]['weight'] = self.calculate_weight(
-                accumulate_qber, accumulate_num_key, accumulate_count_rate,
+                edge, accumulate_qber, accumulate_num_key, accumulate_count_rate,
                 self.G[edge[0]][edge[1]]['qber'],
                 self.G[edge[0]][edge[1]]['num_key'],
                 self.G[edge[0]][edge[1]]['count_rate']
@@ -362,7 +388,7 @@ class QuantumEnvironment:
 
         return min_weight_neighbor
 
-    def calculate_weight(self, accumulate_qber, accumulate_num_key, accumulate_count_rate, current_qber, current_num_key, current_count_rate):
+    def calculate_weight(self, edge, accumulate_qber, accumulate_num_key, accumulate_count_rate, current_qber, current_num_key, current_count_rate):
         weight = 0
         qber_weight = 0
         num_key_weight = 0
@@ -383,6 +409,10 @@ class QuantumEnvironment:
         if self.metric_type == 'num_key':
             if current_num_key == 0:
                 current_num_key = 10000
+            else:
+                if edge[0] > edge[1]:
+                    edge = (edge[1], edge[0])
+                current_num_key = sum(self.cumulative_edge_keys[edge]) / len(self.cumulative_edge_keys[edge])
             if len(accumulate_count_rate) == 0:
                 num_key_weight = 1 / current_num_key
             else:
@@ -409,6 +439,10 @@ class QuantumEnvironment:
             # Calculate num_key weight
             if current_num_key == 0:
                 current_num_key = 10000
+            else:
+                if edge[0] > edge[1]:
+                    edge = (edge[1], edge[0])
+                current_num_key = sum(self.cumulative_edge_keys[edge]) / len(self.cumulative_edge_keys[edge])
             if len(accumulate_count_rate) == 0:
                 num_key_weight = 1 / current_num_key
             else:
@@ -427,7 +461,7 @@ class QuantumEnvironment:
 if __name__ == "__main__":
     env = QuantumEnvironment()
     num_episode = 250
-    num_simulation = 10
+    num_simulation = 100
     seed = 0
 
     weighted_shortest_reward, shortest_reward, qber_reward, num_key_reward, combination_reward = 0, 0, 0, 0, 0
