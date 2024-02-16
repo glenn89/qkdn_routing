@@ -136,12 +136,12 @@ class QuantumEnvironment:
         self.num_seed = seed
         np.random.seed(self.num_seed)
 
-        self.topology_conf = topology_conf.cost266_topo
-        self.generate_key_time_slot = 15
+        self.topology_conf = topology_conf.butterfly_topo
+        self.generate_key_time_slot = 20
         self.generate_key_size = 10
         self.consume_key_size = 4
-        self.consume_mean = 5
-        self.consume_std_dev = 2
+        self.consume_mean = 2
+        self.consume_std_dev = 1
 
         self.time_step = 0
         self.session_blocking = 0
@@ -224,8 +224,8 @@ class QuantumEnvironment:
 
     def find_routing_path(self):
         # current_node, target_node = random.sample(range(0, self.topology_conf['NUM_QKD_NODE']), 2)
-        # current_node, target_node = np.random.choice(np.arange(0, self.topology_conf['NUM_QKD_NODE']), size=2, replace=False)
-        current_node, target_node = 0, 13
+        current_node, target_node = np.random.choice(np.arange(0, self.topology_conf['NUM_QKD_NODE']), size=2, replace=False)
+        # current_node, target_node = 0, 13
         accumulate_qber = []
         accumulate_num_key = []
         accumulate_count_rate = []
@@ -461,7 +461,7 @@ class QuantumEnvironment:
 if __name__ == "__main__":
     env = QuantumEnvironment()
     num_episode = 250
-    num_simulation = 100
+    num_simulation = 10
     seed = 0
 
     weighted_shortest_reward, shortest_reward, qber_reward, num_key_reward, combination_reward = 0, 0, 0, 0, 0
