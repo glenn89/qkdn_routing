@@ -48,4 +48,6 @@ if __name__ == "__main__":
     # plt.legend()
     # plt.show()
 
-    print(np.random.normal(4, 2, 10).astype(int))
+    list = [1, 2, 3, 4, 5, 6, 7, 8]
+    list -= 1
+    print(list)

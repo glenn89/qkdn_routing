@@ -17,6 +17,7 @@ class QuantumEnvironment:
         self.generate_key_size = 0
         self.generate_key_time_slot = 0
         self.init_qber = None
+        self.pool_size = 0
         self.time_step = 0
 
         self.session_blocking = 0
@@ -142,6 +143,7 @@ class QuantumEnvironment:
         self.consume_key_size = 4
         self.consume_mean = 2
         self.consume_std_dev = 1
+        self.pool_size = 100
 
         self.time_step = 0
         self.session_blocking = 0
@@ -517,70 +519,70 @@ if __name__ == "__main__":
     # env.plot_topology()
     # env.plot_heatmap()
 
-    # QBER simulation
-    env.metric_type = 'qber'
-    env.reset(seed=seed)
-    # env.plot_topology()
-    for _ in range(num_simulation):
-        env.reset(seed=seed)
-        for _ in range(num_episode):
-            qber_reward, info = env.step()
-        qber_average_reward += qber_reward
-        qber_average_session_blocking += info['session_blocking']
-        qber_average_total_generation_keys += info['total_generation_keys']
-        qber_average_remaining_keys += info['remaining_keys']
-        qber_average_used_keys += info['used_keys']
-        seed += 1
-    qber_average_reward /= num_simulation
-    qber_average_session_blocking /= num_simulation
-    qber_average_total_generation_keys /= num_simulation
-    qber_average_remaining_keys /= num_simulation
-    qber_average_used_keys /= num_simulation
-    seed = 0
-    # env.plot_topology()
-    # env.plot_heatmap()
-
-    # Num keys simulation
-    env.metric_type = 'num_key'
-    env.reset(seed=seed)
-    for _ in range(num_simulation):
-        env.reset(seed=seed)
-        for _ in range(num_episode):
-            num_key_reward, info = env.step()
-        num_key_average_reward += num_key_reward
-        num_key_average_session_blocking += info['session_blocking']
-        num_key_average_total_generation_keys += info['total_generation_keys']
-        num_key_average_remaining_keys += info['remaining_keys']
-        num_key_average_used_keys += info['used_keys']
-        seed += 1
-    num_key_average_reward /= num_simulation
-    num_key_average_session_blocking /= num_simulation
-    num_key_average_total_generation_keys /= num_simulation
-    num_key_average_remaining_keys /= num_simulation
-    num_key_average_used_keys /= num_simulation
-    seed = 0
-    # env.plot_topology()
-    # env.plot_heatmap()
-
-    # QBER + Num keys simulation
-    env.metric_type = 'combination'
-    env.reset(seed=seed)
-    for _ in range(num_simulation):
-        env.reset(seed=seed)
-        for _ in range(num_episode):
-            combination_reward, info = env.step()
-        combination_average_reward += combination_reward
-        combination_average_session_blocking += info['session_blocking']
-        combination_average_total_generation_keys += info['total_generation_keys']
-        combination_average_remaining_keys += info['remaining_keys']
-        combination_average_used_keys += info['used_keys']
-        seed += 1
-    combination_average_reward /= num_simulation
-    combination_average_session_blocking /= num_simulation
-    combination_average_total_generation_keys /= num_simulation
-    combination_average_remaining_keys /= num_simulation
-    combination_average_used_keys /= num_simulation
-    seed = 0
+    # # QBER simulation
+    # env.metric_type = 'qber'
+    # env.reset(seed=seed)
+    # # env.plot_topology()
+    # for _ in range(num_simulation):
+    #     env.reset(seed=seed)
+    #     for _ in range(num_episode):
+    #         qber_reward, info = env.step()
+    #     qber_average_reward += qber_reward
+    #     qber_average_session_blocking += info['session_blocking']
+    #     qber_average_total_generation_keys += info['total_generation_keys']
+    #     qber_average_remaining_keys += info['remaining_keys']
+    #     qber_average_used_keys += info['used_keys']
+    #     seed += 1
+    # qber_average_reward /= num_simulation
+    # qber_average_session_blocking /= num_simulation
+    # qber_average_total_generation_keys /= num_simulation
+    # qber_average_remaining_keys /= num_simulation
+    # qber_average_used_keys /= num_simulation
+    # seed = 0
+    # # env.plot_topology()
+    # # env.plot_heatmap()
+    #
+    # # Num keys simulation
+    # env.metric_type = 'num_key'
+    # env.reset(seed=seed)
+    # for _ in range(num_simulation):
+    #     env.reset(seed=seed)
+    #     for _ in range(num_episode):
+    #         num_key_reward, info = env.step()
+    #     num_key_average_reward += num_key_reward
+    #     num_key_average_session_blocking += info['session_blocking']
+    #     num_key_average_total_generation_keys += info['total_generation_keys']
+    #     num_key_average_remaining_keys += info['remaining_keys']
+    #     num_key_average_used_keys += info['used_keys']
+    #     seed += 1
+    # num_key_average_reward /= num_simulation
+    # num_key_average_session_blocking /= num_simulation
+    # num_key_average_total_generation_keys /= num_simulation
+    # num_key_average_remaining_keys /= num_simulation
+    # num_key_average_used_keys /= num_simulation
+    # seed = 0
+    # # env.plot_topology()
+    # # env.plot_heatmap()
+    #
+    # # QBER + Num keys simulation
+    # env.metric_type = 'combination'
+    # env.reset(seed=seed)
+    # for _ in range(num_simulation):
+    #     env.reset(seed=seed)
+    #     for _ in range(num_episode):
+    #         combination_reward, info = env.step()
+    #     combination_average_reward += combination_reward
+    #     combination_average_session_blocking += info['session_blocking']
+    #     combination_average_total_generation_keys += info['total_generation_keys']
+    #     combination_average_remaining_keys += info['remaining_keys']
+    #     combination_average_used_keys += info['used_keys']
+    #     seed += 1
+    # combination_average_reward /= num_simulation
+    # combination_average_session_blocking /= num_simulation
+    # combination_average_total_generation_keys /= num_simulation
+    # combination_average_remaining_keys /= num_simulation
+    # combination_average_used_keys /= num_simulation
+    # seed = 0
     # env.plot_topology()
     # env.plot_heatmap()
 
@@ -597,7 +599,7 @@ if __name__ == "__main__":
     print(f"{'Metric':<20}{'Success':<10}{'Session Blocking':<20}{'Total generation keys':<25}{'Used keys':<20}{'Used percentage':<10}")
     print(f"{'simple_shortest':<20}{shortest_average_reward:<10}{shortest_average_session_blocking:<20}{shortest_average_total_generation_keys:<25}{shortest_average_used_keys:<20}{(shortest_average_used_keys/shortest_average_total_generation_keys) * 100:<4.2f}%")
     print(f"{'weighted_shortest':<20}{weighted_shortest_average_reward:<10}{weighted_shortest_average_session_blocking:<20}{weighted_shortest_average_total_generation_keys:<25}{weighted_shortest_average_used_keys:<20}{(weighted_shortest_average_used_keys / weighted_shortest_average_total_generation_keys) * 100:<4.2f}%")
-    print(f"{'QBER':<20}{qber_average_reward:<10}{qber_average_session_blocking:<20}{qber_average_total_generation_keys:<25}{qber_average_used_keys:<20}{(qber_average_used_keys/qber_average_total_generation_keys) * 100:<4.2f}%")
-    print(f"{'Num keys':<20}{num_key_average_reward:<10}{num_key_average_session_blocking:<20}{num_key_average_total_generation_keys:<25}{num_key_average_used_keys:<20}{(num_key_average_used_keys/num_key_average_total_generation_keys) * 100:<4.2f}%")
-    print(f"{'QBER + Num keys':<20}{combination_average_reward:<10}{combination_average_session_blocking:<20}{combination_average_total_generation_keys:<25}{combination_average_used_keys:<20}{(combination_average_used_keys/combination_average_total_generation_keys) * 100:<4.2f}%")
+    # print(f"{'QBER':<20}{qber_average_reward:<10}{qber_average_session_blocking:<20}{qber_average_total_generation_keys:<25}{qber_average_used_keys:<20}{(qber_average_used_keys/qber_average_total_generation_keys) * 100:<4.2f}%")
+    # print(f"{'Num keys':<20}{num_key_average_reward:<10}{num_key_average_session_blocking:<20}{num_key_average_total_generation_keys:<25}{num_key_average_used_keys:<20}{(num_key_average_used_keys/num_key_average_total_generation_keys) * 100:<4.2f}%")
+    # print(f"{'QBER + Num keys':<20}{combination_average_reward:<10}{combination_average_session_blocking:<20}{combination_average_total_generation_keys:<25}{combination_average_used_keys:<20}{(combination_average_used_keys/combination_average_total_generation_keys) * 100:<4.2f}%")
 
