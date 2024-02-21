@@ -49,5 +49,5 @@ if __name__ == "__main__":
     # plt.show()
 
     list = [1, 2, 3, 4, 5, 6, 7, 8]
-    list -= 1
+    list.pop(0)
     print(list)

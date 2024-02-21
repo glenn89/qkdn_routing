@@ -13,11 +13,14 @@ class QuantumEnvironment:
         self.topology_conf = None
         self.metric_type = 'qber'   # type: 'simple_shortest', 'weighted_shortest', 'qber', 'num_key', 'combination'
         self.num_seed = 0
+        self.max_time_step = 0
 
         self.generate_key_size = 0
         self.generate_key_time_slot = 0
         self.init_qber = None
-        self.pool_size = 0
+        self.key_pool_size = 0
+        self.Key_pool = None
+        self.key_life_time = 0
         self.time_step = 0
 
         self.session_blocking = 0
@@ -56,10 +59,12 @@ class QuantumEnvironment:
             } for n in range(len(edges))
         }
         nx.set_edge_attributes(self.G, edges_attribute)
+        self.key_pool.update((key, []) for key in self.G.edges)  # Generate key pool
         self.num_key_with_qber()  # Reflect the number of keys with qber
 
     def num_key_with_qber(self):
         edges = list(self.G.edges())
+
         # Update qber and count rate
         for edge in edges:
             # qber scope is 1% ~ 15%
@@ -83,8 +88,17 @@ class QuantumEnvironment:
                 if self.topology_conf['NAME'] == 'BUTTERFLY':
                     if edge[0] == 0 or edge[1] == 5:
                         generated_keys += 10
-                self.G[edge[0]][edge[1]]['num_key'] += generated_keys
                 self.total_generation_keys += generated_keys
+
+                # Append key life time
+                for _ in range(generated_keys):
+                    if len(self.key_pool[edge]) + generated_keys > self.key_pool_size:
+                        self.key_pool[edge] = self.key_pool[edge][len(self.key_pool[edge]) + generated_keys - self.key_pool_size:]
+                    self.key_pool[edge].append(self.key_life_time)
+
+                self.G[edge[0]][edge[1]]['num_key'] = len(self.key_pool[edge])
+
+                
             except ValueError as e:
                 print(error_rate, e)
             # generated_keys = self.generate_key_size
@@ -133,17 +147,20 @@ class QuantumEnvironment:
         plt.title('Sophisticated Network with Red Link Strength Heatmap')
         plt.show()
 
-    def reset(self, seed):
+    def reset(self, seed, max_time_step):
         self.num_seed = seed
         np.random.seed(self.num_seed)
+        self.max_time_step = max_time_step
 
-        self.topology_conf = topology_conf.butterfly_topo
+        self.topology_conf = topology_conf.nsfnet_topo
         self.generate_key_time_slot = 20
         self.generate_key_size = 10
         self.consume_key_size = 4
-        self.consume_mean = 2
-        self.consume_std_dev = 1
-        self.pool_size = 100
+        self.consume_mean = 4
+        self.consume_std_dev = 2
+        self.key_life_time = 25
+        self.key_pool_size = 50
+        self.key_pool = {}
 
         self.time_step = 0
         self.session_blocking = 0
@@ -165,7 +182,7 @@ class QuantumEnvironment:
         info = {}
         self.consume_key_size = max(int(np.random.normal(self.consume_mean, self.consume_std_dev)), 1)
 
-        # Cumulative edge key at cumulative size
+        # Cumulative edge key at cumulative size for weighted average num key
         for edge in self.G.edges:
             if len(self.cumulative_edge_keys[edge]) < 6:
                 self.cumulative_edge_keys[edge].append(self.G[edge[0]][edge[1]]['num_key'])
@@ -177,6 +194,7 @@ class QuantumEnvironment:
         # if self.metric_type == 'num_key':
         #     print("time step: ", self.time_step, "routing path: ", routing_path)
             # self.plot_topology()
+
         if not routing_path:
             # print("Don't find the routing path")
             self.session_blocking -= 1
@@ -187,9 +205,23 @@ class QuantumEnvironment:
                 self.node_num_heat[routing_path[i]][routing_path[i+1]] += 1
                 self.node_num_heat[routing_path[i+1]][routing_path[i]] += 1
                 self.used_keys += self.consume_key_size
+                if routing_path[i] < routing_path[i+1]:
+                    self.key_pool[(routing_path[i], routing_path[i+1])] = self.key_pool[(routing_path[i], routing_path[i+1])][self.consume_key_size:]
+                else:
+                    self.key_pool[(routing_path[i+1], routing_path[i])] = self.key_pool[(routing_path[i+1], routing_path[i])][self.consume_key_size:]
+
+        # for i in self.G.edges:
+        #     if i == (0, 1):
+        #         # if self.G.edges[i]['num_key'] != len(self.key_pool[i]):
+        #         print("time step: ", self.time_step, "edge: ", i, "num_key: ", self.G.edges[i]['num_key'])
+        #         print("time step: ", self.time_step, "edge: ", i, "num_key: ", len(self.key_pool[i]), self.key_pool[i])
+        #         print()
 
         for u, v, attr in self.G.edges(data=True):
             self.remaining_keys += attr['num_key']
+            self.key_pool[(u, v)] = [life - 1 for life in self.key_pool[(u, v)]]
+            self.key_pool[(u, v)] = [life for life in self.key_pool[(u, v)] if life >= 1]
+            self.G.edges[(u, v)]['num_key'] = len(self.key_pool[(u, v)])
 
         if self.time_step != 0 and self.time_step % self.generate_key_time_slot == 0:
             self.num_key_with_qber()
@@ -270,6 +302,22 @@ class QuantumEnvironment:
             # routing_path = nx.shortest_path(subnet, 0, 5)
             for edge in subnet.edges:
                 subnet[edge[0]][edge[1]]['weight'] = 1 / subnet[edge[0]][edge[1]]['num_key']
+            routing_path = nx.shortest_path(subnet, current_node, target_node, 'weight')
+
+        if self.metric_type == 'weighted_life_shortest':
+            copied_G = copy.deepcopy(self.G)
+            subnet = nx.subgraph_view(
+                copied_G,
+                filter_edge=lambda node_1_id, node_2_id: \
+                    True if copied_G.edges[(node_1_id, node_2_id)]['num_key'] >= self.consume_key_size else False
+            )
+            if len(subnet.edges) == 0 or not nx.has_path(subnet, source=current_node, target=target_node):
+                return []
+
+            # routing_path = nx.shortest_path(subnet, 0, 5)
+            for edge in subnet.edges:
+                life_time_weight = [self.key_life_time + 1 - key_life for key_life in self.key_pool[edge]]
+                subnet[edge[0]][edge[1]]['weight'] = 1 / sum(life_time_weight)
             routing_path = nx.shortest_path(subnet, current_node, target_node, 'weight')
 
         # Using QBER
@@ -367,7 +415,10 @@ class QuantumEnvironment:
         #     print("Final routing path: ", routing_path)
         # Consumed quantum key
         for i in range(len(routing_path) - 1):
-            self.G[routing_path[i]][routing_path[i+1]]['num_key'] -= self.consume_key_size
+            if routing_path[i] < routing_path[i+1]:
+                self.G[routing_path[i]][routing_path[i+1]]['num_key'] -= self.consume_key_size
+            else:
+                self.G[routing_path[i+1]][routing_path[i]]['num_key'] -= self.consume_key_size
 
         return routing_path
 
@@ -462,7 +513,7 @@ class QuantumEnvironment:
 
 if __name__ == "__main__":
     env = QuantumEnvironment()
-    num_episode = 250
+    max_time_step = 300
     num_simulation = 10
     seed = 0
 
@@ -475,11 +526,11 @@ if __name__ == "__main__":
 
     # Shortest path simulation
     env.metric_type = 'simple_shortest'
-    env.reset(seed=seed)
+    env.reset(seed=seed, max_time_step=max_time_step)
     env.plot_topology()
     for _ in range(num_simulation):
-        env.reset(seed=seed)
-        for _ in range(num_episode):
+        env.reset(seed=seed, max_time_step=max_time_step)
+        for _ in range(max_time_step):
             shortest_reward, info = env.step()
         shortest_average_reward += shortest_reward
         shortest_average_session_blocking += info['session_blocking']
@@ -498,11 +549,11 @@ if __name__ == "__main__":
 
     # Weighted shortest path simulation
     env.metric_type = 'weighted_shortest'
-    env.reset(seed=seed)
+    env.reset(seed=seed, max_time_step=max_time_step)
     # env.plot_topology()
     for _ in range(num_simulation):
-        env.reset(seed=seed)
-        for _ in range(num_episode):
+        env.reset(seed=seed, max_time_step=max_time_step)
+        for _ in range(max_time_step):
             weighted_shortest_reward, info = env.step()
         weighted_shortest_average_reward += weighted_shortest_reward
         weighted_shortest_average_session_blocking += info['session_blocking']
@@ -519,35 +570,35 @@ if __name__ == "__main__":
     # env.plot_topology()
     # env.plot_heatmap()
 
-    # # QBER simulation
-    # env.metric_type = 'qber'
-    # env.reset(seed=seed)
-    # # env.plot_topology()
-    # for _ in range(num_simulation):
-    #     env.reset(seed=seed)
-    #     for _ in range(num_episode):
-    #         qber_reward, info = env.step()
-    #     qber_average_reward += qber_reward
-    #     qber_average_session_blocking += info['session_blocking']
-    #     qber_average_total_generation_keys += info['total_generation_keys']
-    #     qber_average_remaining_keys += info['remaining_keys']
-    #     qber_average_used_keys += info['used_keys']
-    #     seed += 1
-    # qber_average_reward /= num_simulation
-    # qber_average_session_blocking /= num_simulation
-    # qber_average_total_generation_keys /= num_simulation
-    # qber_average_remaining_keys /= num_simulation
-    # qber_average_used_keys /= num_simulation
-    # seed = 0
+    # QBER simulation
+    env.metric_type = 'weighted_life_shortest'
+    env.reset(seed=seed, max_time_step=max_time_step)
+    # env.plot_topology()
+    for _ in range(num_simulation):
+        env.reset(seed=seed, max_time_step=max_time_step)
+        for _ in range(max_time_step):
+            qber_reward, info = env.step()
+        qber_average_reward += qber_reward
+        qber_average_session_blocking += info['session_blocking']
+        qber_average_total_generation_keys += info['total_generation_keys']
+        qber_average_remaining_keys += info['remaining_keys']
+        qber_average_used_keys += info['used_keys']
+        seed += 1
+    qber_average_reward /= num_simulation
+    qber_average_session_blocking /= num_simulation
+    qber_average_total_generation_keys /= num_simulation
+    qber_average_remaining_keys /= num_simulation
+    qber_average_used_keys /= num_simulation
+    seed = 0
     # # env.plot_topology()
     # # env.plot_heatmap()
     #
     # # Num keys simulation
     # env.metric_type = 'num_key'
-    # env.reset(seed=seed)
+    # env.reset(seed=seed, max_time_step=max_time_step)
     # for _ in range(num_simulation):
-    #     env.reset(seed=seed)
-    #     for _ in range(num_episode):
+    #     env.reset(seed=seed, max_time_step=max_time_step)
+    #     for _ in range(max_time_step):
     #         num_key_reward, info = env.step()
     #     num_key_average_reward += num_key_reward
     #     num_key_average_session_blocking += info['session_blocking']
@@ -566,10 +617,10 @@ if __name__ == "__main__":
     #
     # # QBER + Num keys simulation
     # env.metric_type = 'combination'
-    # env.reset(seed=seed)
+    # env.reset(seed=seed, max_time_step=max_time_step)
     # for _ in range(num_simulation):
-    #     env.reset(seed=seed)
-    #     for _ in range(num_episode):
+    #     env.reset(seed=seed, max_time_step=max_time_step)
+    #     for _ in range(max_time_step):
     #         combination_reward, info = env.step()
     #     combination_average_reward += combination_reward
     #     combination_average_session_blocking += info['session_blocking']
@@ -592,14 +643,14 @@ if __name__ == "__main__":
 
     # Print the results in a tabular format
     print("Simulation information")
-    print("The number of episode: ", num_episode)
+    print("The number of max time step: ", max_time_step)
     print("The number of simulation: ", num_simulation)
     print()
     print("Average Results:")
     print(f"{'Metric':<20}{'Success':<10}{'Session Blocking':<20}{'Total generation keys':<25}{'Used keys':<20}{'Used percentage':<10}")
     print(f"{'simple_shortest':<20}{shortest_average_reward:<10}{shortest_average_session_blocking:<20}{shortest_average_total_generation_keys:<25}{shortest_average_used_keys:<20}{(shortest_average_used_keys/shortest_average_total_generation_keys) * 100:<4.2f}%")
     print(f"{'weighted_shortest':<20}{weighted_shortest_average_reward:<10}{weighted_shortest_average_session_blocking:<20}{weighted_shortest_average_total_generation_keys:<25}{weighted_shortest_average_used_keys:<20}{(weighted_shortest_average_used_keys / weighted_shortest_average_total_generation_keys) * 100:<4.2f}%")
-    # print(f"{'QBER':<20}{qber_average_reward:<10}{qber_average_session_blocking:<20}{qber_average_total_generation_keys:<25}{qber_average_used_keys:<20}{(qber_average_used_keys/qber_average_total_generation_keys) * 100:<4.2f}%")
+    print(f"{'life_time_shortest':<20}{qber_average_reward:<10}{qber_average_session_blocking:<20}{qber_average_total_generation_keys:<25}{qber_average_used_keys:<20}{(qber_average_used_keys/qber_average_total_generation_keys) * 100:<4.2f}%")
     # print(f"{'Num keys':<20}{num_key_average_reward:<10}{num_key_average_session_blocking:<20}{num_key_average_total_generation_keys:<25}{num_key_average_used_keys:<20}{(num_key_average_used_keys/num_key_average_total_generation_keys) * 100:<4.2f}%")
     # print(f"{'QBER + Num keys':<20}{combination_average_reward:<10}{combination_average_session_blocking:<20}{combination_average_total_generation_keys:<25}{combination_average_used_keys:<20}{(combination_average_used_keys/combination_average_total_generation_keys) * 100:<4.2f}%")
 
