@@ -159,7 +159,7 @@ class QuantumEnvironment:
         self.consume_mean = 4
         self.consume_std_dev = 2
         self.key_life_time = 25
-        self.key_pool_size = 50
+        self.key_pool_size = 100_000
         self.key_pool = {}
 
         self.time_step = 0
@@ -180,7 +180,8 @@ class QuantumEnvironment:
 
     def step(self):
         info = {}
-        self.consume_key_size = max(int(np.random.normal(self.consume_mean, self.consume_std_dev)), 1)
+        # self.consume_key_size = max(int(np.random.normal(self.consume_mean, self.consume_std_dev)), 1)
+        self.consume_key_size = np.random.pareto(self.consume_mean, 1).astype(int)[0] + 1
 
         # Cumulative edge key at cumulative size for weighted average num key
         for edge in self.G.edges:
@@ -316,7 +317,8 @@ class QuantumEnvironment:
 
             # routing_path = nx.shortest_path(subnet, 0, 5)
             for edge in subnet.edges:
-                life_time_weight = [self.key_life_time + 1 - key_life for key_life in self.key_pool[edge]]
+                # life_time_weight = [self.key_life_time + 1 - key_life for key_life in self.key_pool[edge]]
+                life_time_weight = [100 if key_life < self.key_life_time * 0.5 else 1 for key_life in self.key_pool[edge]]
                 subnet[edge[0]][edge[1]]['weight'] = 1 / sum(life_time_weight)
             routing_path = nx.shortest_path(subnet, current_node, target_node, 'weight')
 

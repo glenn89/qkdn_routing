@@ -48,6 +48,28 @@ if __name__ == "__main__":
     # plt.legend()
     # plt.show()
 
-    list = [1, 2, 3, 4, 5, 6, 7, 8]
-    list.pop(0)
-    print(list)
+    def generate_packet_counts(size, alpha):
+        # 파레토 분포를 따르는 패킷 수 생성
+        pareto_counts = np.random.pareto(alpha, size) + 1
+        return pareto_counts.astype(int)
+
+
+    def simulate_packet_generation(steps, alpha):
+        # 각 스텝에서 생성되는 패킷 수 생성
+        packet_counts = generate_packet_counts(steps, alpha)
+
+        # 패킷 수 시각화
+        plt.plot(range(1, steps + 1), packet_counts, marker='o', linestyle='-')
+        plt.xlabel('Step')
+        plt.ylabel('Packet Count')
+        plt.title('Simulation of Packet Generation')
+        plt.grid(True)
+        plt.show()
+
+
+    # 시뮬레이션 파라미터 설정
+    steps = 100  # 시뮬레이션 스텝 수
+    alpha = 2  # 파레토 분포의 모수
+
+    # 패킷 생성 시뮬레이션
+    simulate_packet_generation(steps, alpha)
