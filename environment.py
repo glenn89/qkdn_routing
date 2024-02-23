@@ -158,7 +158,7 @@ class QuantumEnvironment:
         self.consume_key_size = 4
         self.consume_mean = 4
         self.consume_std_dev = 2
-        self.key_life_time = 25
+        self.key_life_time = 30
         self.key_pool_size = 100_000
         self.key_pool = {}
 
@@ -180,8 +180,8 @@ class QuantumEnvironment:
 
     def step(self):
         info = {}
-        # self.consume_key_size = max(int(np.random.normal(self.consume_mean, self.consume_std_dev)), 1)
-        self.consume_key_size = np.random.pareto(self.consume_mean, 1).astype(int)[0] + 1
+        self.consume_key_size = max(int(np.random.normal(self.consume_mean, self.consume_std_dev)), 1)
+        # self.consume_key_size = np.random.pareto(self.consume_mean, 1).astype(int)[0] + 3
 
         # Cumulative edge key at cumulative size for weighted average num key
         for edge in self.G.edges:

@@ -50,7 +50,8 @@ if __name__ == "__main__":
 
     def generate_packet_counts(size, alpha):
         # 파레토 분포를 따르는 패킷 수 생성
-        pareto_counts = np.random.pareto(alpha, size) + 1
+        pareto_counts = np.random.pareto(alpha, size) + 2
+        print(pareto_counts)
         return pareto_counts.astype(int)
 
 
