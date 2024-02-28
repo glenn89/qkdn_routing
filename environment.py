@@ -17,6 +17,10 @@ class QuantumEnvironment:
 
         self.generate_key_size = 0
         self.generate_key_time_slot = 0
+        self.consume_key_size = 0
+        self.consume_mean = 0
+        self.consume_std_dev = 0
+        self.num_request = 0
         self.init_qber = None
         self.key_pool_size = 0
         self.Key_pool = None
@@ -154,11 +158,13 @@ class QuantumEnvironment:
 
         self.topology_conf = topology_conf.nsfnet_topo
         self.generate_key_time_slot = 20
-        self.generate_key_size = 10
-        self.consume_key_size = 4
+        self.generate_key_size = 15
+        # self.generate_key_size = np.random.pareto(1, 1).astype(int)[0] * 20
+        self.consume_key_size = 1
         self.consume_mean = 4
         self.consume_std_dev = 2
-        self.key_life_time = 30
+        self.num_request = 0
+        self.key_life_time = 50
         self.key_pool_size = 100_000
         self.key_pool = {}
 
@@ -180,8 +186,10 @@ class QuantumEnvironment:
 
     def step(self):
         info = {}
-        self.consume_key_size = max(int(np.random.normal(self.consume_mean, self.consume_std_dev)), 1)
+        # self.consume_key_size = max(int(np.random.normal(self.consume_mean, self.consume_std_dev)), 1)
         # self.consume_key_size = np.random.pareto(self.consume_mean, 1).astype(int)[0] + 3
+        self.num_request = np.random.pareto(3, 1).astype(int)[0] + 2
+        # print("time step: ", self.time_step, "the number of request: ", self.num_request)
 
         # Cumulative edge key at cumulative size for weighted average num key
         for edge in self.G.edges:
@@ -191,38 +199,39 @@ class QuantumEnvironment:
                 self.cumulative_edge_keys[edge].pop(0)
                 self.cumulative_edge_keys[edge].append(self.G[edge[0]][edge[1]]['num_key'])
 
-        routing_path = self.find_routing_path()
+        for _ in range(self.num_request):
+            routing_path = self.find_routing_path()
         # if self.metric_type == 'num_key':
         #     print("time step: ", self.time_step, "routing path: ", routing_path)
             # self.plot_topology()
 
-        if not routing_path:
-            # print("Don't find the routing path")
-            self.session_blocking -= 1
-        else:
-            # print("Find the routing path")
-            self.reward += 1
-            for i in range(len(routing_path) - 1):
-                self.node_num_heat[routing_path[i]][routing_path[i+1]] += 1
-                self.node_num_heat[routing_path[i+1]][routing_path[i]] += 1
-                self.used_keys += self.consume_key_size
-                if routing_path[i] < routing_path[i+1]:
-                    self.key_pool[(routing_path[i], routing_path[i+1])] = self.key_pool[(routing_path[i], routing_path[i+1])][self.consume_key_size:]
-                else:
-                    self.key_pool[(routing_path[i+1], routing_path[i])] = self.key_pool[(routing_path[i+1], routing_path[i])][self.consume_key_size:]
+            if not routing_path:
+                # print("Don't find the routing path")
+                self.session_blocking -= 1
+            else:
+                # print("Find the routing path")
+                self.reward += 1
+                for i in range(len(routing_path) - 1):
+                    self.node_num_heat[routing_path[i]][routing_path[i+1]] += 1
+                    self.node_num_heat[routing_path[i+1]][routing_path[i]] += 1
+                    self.used_keys += self.consume_key_size
+                    if routing_path[i] < routing_path[i+1]:
+                        self.key_pool[(routing_path[i], routing_path[i+1])] = self.key_pool[(routing_path[i], routing_path[i+1])][self.consume_key_size:]
+                    else:
+                        self.key_pool[(routing_path[i+1], routing_path[i])] = self.key_pool[(routing_path[i+1], routing_path[i])][self.consume_key_size:]
 
-        # for i in self.G.edges:
-        #     if i == (0, 1):
-        #         # if self.G.edges[i]['num_key'] != len(self.key_pool[i]):
-        #         print("time step: ", self.time_step, "edge: ", i, "num_key: ", self.G.edges[i]['num_key'])
-        #         print("time step: ", self.time_step, "edge: ", i, "num_key: ", len(self.key_pool[i]), self.key_pool[i])
-        #         print()
+            # for i in self.G.edges:
+            #     if i == (0, 1):
+            #         # if self.G.edges[i]['num_key'] != len(self.key_pool[i]):
+            #         print("time step: ", self.time_step, "edge: ", i, "num_key: ", self.G.edges[i]['num_key'])
+            #         print("time step: ", self.time_step, "edge: ", i, "num_key: ", len(self.key_pool[i]), self.key_pool[i])
+            #         print()
 
-        for u, v, attr in self.G.edges(data=True):
-            self.remaining_keys += attr['num_key']
-            self.key_pool[(u, v)] = [life - 1 for life in self.key_pool[(u, v)]]
-            self.key_pool[(u, v)] = [life for life in self.key_pool[(u, v)] if life >= 1]
-            self.G.edges[(u, v)]['num_key'] = len(self.key_pool[(u, v)])
+            for u, v, attr in self.G.edges(data=True):
+                self.remaining_keys += attr['num_key']
+                self.key_pool[(u, v)] = [life - 1 for life in self.key_pool[(u, v)]]
+                self.key_pool[(u, v)] = [life for life in self.key_pool[(u, v)] if life >= 1]
+                self.G.edges[(u, v)]['num_key'] = len(self.key_pool[(u, v)])
 
         if self.time_step != 0 and self.time_step % self.generate_key_time_slot == 0:
             self.num_key_with_qber()
@@ -274,7 +283,7 @@ class QuantumEnvironment:
         if self.metric_type == 'simple_shortest':
             routing_path = nx.shortest_path(self.G, current_node, target_node)
             for i in range(len(routing_path) - 1):
-                if self.G[routing_path[i]][routing_path[i + 1]]['num_key'] < self.consume_key_size:
+                if self.G[routing_path[i]][routing_path[i+1]]['num_key'] < self.consume_key_size:
                     return []
             # copied_G = copy.deepcopy(self.G)
             # subnet = nx.subgraph_view(
@@ -316,9 +325,21 @@ class QuantumEnvironment:
                 return []
 
             # routing_path = nx.shortest_path(subnet, 0, 5)
+            life_time_weight = []
             for edge in subnet.edges:
                 # life_time_weight = [self.key_life_time + 1 - key_life for key_life in self.key_pool[edge]]
-                life_time_weight = [100 if key_life < self.key_life_time * 0.5 else 1 for key_life in self.key_pool[edge]]
+                # life_time_weight = [100 if key_life < self.key_life_time * 0.5 else 1 for key_life in self.key_pool[edge]]
+                for key_life in self.key_pool[edge]:
+                    if key_life < self.key_life_time * 0.1:
+                        life_time_weight.append(100)
+                    elif key_life < self.key_life_time * 0.25:
+                        life_time_weight.append(50)
+                    elif key_life < self.key_life_time * 0.5:
+                        life_time_weight.append(25)
+                    elif key_life < self.key_life_time * 0.75:
+                        life_time_weight.append(10)
+                    else:
+                        life_time_weight.append(1)
                 subnet[edge[0]][edge[1]]['weight'] = 1 / sum(life_time_weight)
             routing_path = nx.shortest_path(subnet, current_node, target_node, 'weight')
 
@@ -463,7 +484,7 @@ class QuantumEnvironment:
 
         if self.metric_type == 'num_key':
             if current_num_key == 0:
-                current_num_key = 10000
+                current_num_key = 10_000
             else:
                 if edge[0] > edge[1]:
                     edge = (edge[1], edge[0])
@@ -515,8 +536,8 @@ class QuantumEnvironment:
 
 if __name__ == "__main__":
     env = QuantumEnvironment()
-    max_time_step = 300
-    num_simulation = 10
+    max_time_step = 40_000
+    num_simulation = 1
     seed = 0
 
     weighted_shortest_reward, shortest_reward, qber_reward, num_key_reward, combination_reward = 0, 0, 0, 0, 0

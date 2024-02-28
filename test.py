@@ -50,7 +50,7 @@ if __name__ == "__main__":
 
     def generate_packet_counts(size, alpha):
         # 파레토 분포를 따르는 패킷 수 생성
-        pareto_counts = np.random.pareto(alpha, size) + 2
+        pareto_counts = np.random.pareto(alpha, size) + 3
         print(pareto_counts)
         return pareto_counts.astype(int)
 
@@ -70,7 +70,7 @@ if __name__ == "__main__":
 
     # 시뮬레이션 파라미터 설정
     steps = 100  # 시뮬레이션 스텝 수
-    alpha = 2  # 파레토 분포의 모수
+    alpha = 1   # 파레토 분포의 모수
 
     # 패킷 생성 시뮬레이션
     simulate_packet_generation(steps, alpha)
