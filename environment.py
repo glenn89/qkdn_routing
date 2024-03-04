@@ -203,7 +203,7 @@ class QuantumEnvironment:
             routing_path = self.find_routing_path()
         # if self.metric_type == 'num_key':
         #     print("time step: ", self.time_step, "routing path: ", routing_path)
-            # self.plot_topology()
+        #     self.plot_topology()
 
             if not routing_path:
                 # print("Don't find the routing path")
@@ -325,23 +325,29 @@ class QuantumEnvironment:
                 return []
 
             # routing_path = nx.shortest_path(subnet, 0, 5)
-            life_time_weight = []
             for edge in subnet.edges:
+                life_time_weight = []
                 # life_time_weight = [self.key_life_time + 1 - key_life for key_life in self.key_pool[edge]]
                 # life_time_weight = [100 if key_life < self.key_life_time * 0.5 else 1 for key_life in self.key_pool[edge]]
                 for key_life in self.key_pool[edge]:
-                    if key_life < self.key_life_time * 0.1:
+                    if key_life <= self.key_life_time * 0.1:
                         life_time_weight.append(100)
-                    elif key_life < self.key_life_time * 0.25:
+                    elif key_life <= self.key_life_time * 0.25:
                         life_time_weight.append(50)
-                    elif key_life < self.key_life_time * 0.5:
+                    elif key_life <= self.key_life_time * 0.5:
                         life_time_weight.append(25)
-                    elif key_life < self.key_life_time * 0.75:
+                    elif key_life <= self.key_life_time * 0.75:
                         life_time_weight.append(10)
                     else:
                         life_time_weight.append(1)
                 subnet[edge[0]][edge[1]]['weight'] = 1 / sum(life_time_weight)
-            routing_path = nx.shortest_path(subnet, current_node, target_node, 'weight')
+
+            routing_path_1 = nx.shortest_path(subnet, current_node, target_node, 'weight')
+            routing_path_2 = nx.shortest_path(subnet, target_node, current_node, 'weight')
+            if len(routing_path_1) > len(routing_path_2):
+                routing_path = routing_path_2
+            else:
+                routing_path = routing_path_1
 
         # Using QBER
         if self.metric_type == 'qber':
@@ -536,7 +542,7 @@ class QuantumEnvironment:
 
 if __name__ == "__main__":
     env = QuantumEnvironment()
-    max_time_step = 40_000
+    max_time_step = 50_000
     num_simulation = 1
     seed = 0
 
