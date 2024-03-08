@@ -38,6 +38,7 @@ class QuantumEnvironment:
         self.count = 0
         self.cumulative_size = 1
         self.cumulative_edge_keys = None
+        self.alpha = 0
 
     def generate_topology(self):
         self.G = nx.Graph()
@@ -157,11 +158,11 @@ class QuantumEnvironment:
         self.max_time_step = max_time_step
 
         self.topology_conf = topology_conf.nsfnet_topo
-        self.generate_key_time_slot = 20
-        self.generate_key_size = 15
+        self.generate_key_time_slot = 25
+        self.generate_key_size = 50
         # self.generate_key_size = np.random.pareto(1, 1).astype(int)[0] * 20
         self.consume_key_size = 1
-        self.consume_mean = 4
+        self.consume_mean = 1
         self.consume_std_dev = 2
         self.num_request = 0
         self.key_life_time = 50
@@ -188,7 +189,7 @@ class QuantumEnvironment:
         info = {}
         # self.consume_key_size = max(int(np.random.normal(self.consume_mean, self.consume_std_dev)), 1)
         # self.consume_key_size = np.random.pareto(self.consume_mean, 1).astype(int)[0] + 3
-        self.num_request = np.random.pareto(3, 1).astype(int)[0] + 2
+        self.num_request = np.random.pareto(3, 1).astype(int)[0] + 1
         # print("time step: ", self.time_step, "the number of request: ", self.num_request)
 
         # Cumulative edge key at cumulative size for weighted average num key
@@ -201,9 +202,9 @@ class QuantumEnvironment:
 
         for _ in range(self.num_request):
             routing_path = self.find_routing_path()
-        # if self.metric_type == 'num_key':
-        #     print("time step: ", self.time_step, "routing path: ", routing_path)
-        #     self.plot_topology()
+            # if self.metric_type == 'num_key':
+            #     print("time step: ", self.time_step, "routing path: ", routing_path)
+            #     self.plot_topology()
 
             if not routing_path:
                 # print("Don't find the routing path")
@@ -331,23 +332,17 @@ class QuantumEnvironment:
                 # life_time_weight = [100 if key_life < self.key_life_time * 0.5 else 1 for key_life in self.key_pool[edge]]
                 for key_life in self.key_pool[edge]:
                     if key_life <= self.key_life_time * 0.1:
-                        life_time_weight.append(100)
+                        life_time_weight.append(1000)
                     elif key_life <= self.key_life_time * 0.25:
-                        life_time_weight.append(50)
+                        life_time_weight.append(500)
                     elif key_life <= self.key_life_time * 0.5:
-                        life_time_weight.append(25)
+                        life_time_weight.append(100)
                     elif key_life <= self.key_life_time * 0.75:
-                        life_time_weight.append(10)
+                        life_time_weight.append(50)
                     else:
                         life_time_weight.append(1)
-                subnet[edge[0]][edge[1]]['weight'] = 1 / sum(life_time_weight)
-
-            routing_path_1 = nx.shortest_path(subnet, current_node, target_node, 'weight')
-            routing_path_2 = nx.shortest_path(subnet, target_node, current_node, 'weight')
-            if len(routing_path_1) > len(routing_path_2):
-                routing_path = routing_path_2
-            else:
-                routing_path = routing_path_1
+                subnet[edge[0]][edge[1]]['weight'] = len(life_time_weight) * 1 / sum(life_time_weight)
+            routing_path = nx.shortest_path(subnet, current_node, target_node, 'weight')
 
         # Using QBER
         if self.metric_type == 'qber':
@@ -542,7 +537,7 @@ class QuantumEnvironment:
 
 if __name__ == "__main__":
     env = QuantumEnvironment()
-    max_time_step = 50_000
+    max_time_step = 500_000
     num_simulation = 1
     seed = 0
 
@@ -556,7 +551,7 @@ if __name__ == "__main__":
     # Shortest path simulation
     env.metric_type = 'simple_shortest'
     env.reset(seed=seed, max_time_step=max_time_step)
-    env.plot_topology()
+    # env.plot_topology()
     for _ in range(num_simulation):
         env.reset(seed=seed, max_time_step=max_time_step)
         for _ in range(max_time_step):
