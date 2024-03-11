@@ -69,7 +69,6 @@ class QuantumEnvironment:
 
     def num_key_with_qber(self):
         edges = list(self.G.edges())
-
         # Update qber and count rate
         for edge in edges:
             # qber scope is 1% ~ 15%
@@ -158,7 +157,7 @@ class QuantumEnvironment:
         self.max_time_step = max_time_step
 
         self.topology_conf = topology_conf.nsfnet_topo
-        self.generate_key_time_slot = 25
+        self.generate_key_time_slot = 40
         self.generate_key_size = 50
         # self.generate_key_size = np.random.pareto(1, 1).astype(int)[0] * 20
         self.consume_key_size = 1
@@ -574,7 +573,7 @@ if __name__ == "__main__":
     # Weighted shortest path simulation
     env.metric_type = 'weighted_shortest'
     env.reset(seed=seed, max_time_step=max_time_step)
-    # env.plot_topology()
+    # env.plot_topology()https://ecconf.webex.com/ecconf/j.php?MTID=m73d0035bfb13fb2090b444ee3602aa35
     for _ in range(num_simulation):
         env.reset(seed=seed, max_time_step=max_time_step)
         for _ in range(max_time_step):
