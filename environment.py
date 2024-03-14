@@ -157,7 +157,7 @@ class QuantumEnvironment:
         self.max_time_step = max_time_step
 
         self.topology_conf = topology_conf.nsfnet_topo
-        self.generate_key_time_slot = 40
+        self.generate_key_time_slot = 50
         self.generate_key_size = 50
         # self.generate_key_size = np.random.pareto(1, 1).astype(int)[0] * 20
         self.consume_key_size = 1
@@ -188,7 +188,7 @@ class QuantumEnvironment:
         info = {}
         # self.consume_key_size = max(int(np.random.normal(self.consume_mean, self.consume_std_dev)), 1)
         # self.consume_key_size = np.random.pareto(self.consume_mean, 1).astype(int)[0] + 3
-        self.num_request = np.random.pareto(3, 1).astype(int)[0] + 1
+        self.num_request = np.random.pareto(3, 1).astype(int)[0] * 2
         # print("time step: ", self.time_step, "the number of request: ", self.num_request)
 
         # Cumulative edge key at cumulative size for weighted average num key
@@ -215,10 +215,6 @@ class QuantumEnvironment:
                     self.node_num_heat[routing_path[i]][routing_path[i+1]] += 1
                     self.node_num_heat[routing_path[i+1]][routing_path[i]] += 1
                     self.used_keys += self.consume_key_size
-                    if routing_path[i] < routing_path[i+1]:
-                        self.key_pool[(routing_path[i], routing_path[i+1])] = self.key_pool[(routing_path[i], routing_path[i+1])][self.consume_key_size:]
-                    else:
-                        self.key_pool[(routing_path[i+1], routing_path[i])] = self.key_pool[(routing_path[i+1], routing_path[i])][self.consume_key_size:]
 
             # for i in self.G.edges:
             #     if i == (0, 1):
@@ -332,14 +328,15 @@ class QuantumEnvironment:
                 for key_life in self.key_pool[edge]:
                     if key_life <= self.key_life_time * 0.1:
                         life_time_weight.append(1000)
-                    elif key_life <= self.key_life_time * 0.25:
-                        life_time_weight.append(500)
+                    # elif key_life <= self.key_life_time * 0.25:
+                    #     life_time_weight.append(500)
                     elif key_life <= self.key_life_time * 0.5:
                         life_time_weight.append(100)
-                    elif key_life <= self.key_life_time * 0.75:
-                        life_time_weight.append(50)
+                    # elif key_life <= self.key_life_time * 0.75:
+                    #     life_time_weight.append(50)
                     else:
                         life_time_weight.append(1)
+                # subnet[edge[0]][edge[1]]['weight'] = len(life_time_weight) * 1 / sum(life_time_weight)
                 subnet[edge[0]][edge[1]]['weight'] = len(life_time_weight) * 1 / sum(life_time_weight)
             routing_path = nx.shortest_path(subnet, current_node, target_node, 'weight')
 
@@ -440,8 +437,10 @@ class QuantumEnvironment:
         for i in range(len(routing_path) - 1):
             if routing_path[i] < routing_path[i+1]:
                 self.G[routing_path[i]][routing_path[i+1]]['num_key'] -= self.consume_key_size
+                self.key_pool[(routing_path[i], routing_path[i + 1])] = self.key_pool[(routing_path[i], routing_path[i + 1])][self.consume_key_size:]
             else:
                 self.G[routing_path[i+1]][routing_path[i]]['num_key'] -= self.consume_key_size
+                self.key_pool[(routing_path[i + 1], routing_path[i])] = self.key_pool[(routing_path[i + 1], routing_path[i])][self.consume_key_size:]
 
         return routing_path
 
@@ -536,7 +535,7 @@ class QuantumEnvironment:
 
 if __name__ == "__main__":
     env = QuantumEnvironment()
-    max_time_step = 500_000
+    max_time_step = 1_500_000
     num_simulation = 1
     seed = 0
 
