@@ -207,6 +207,7 @@ class QuantumEnvironment:
 
             if not routing_path:
                 # print("Don't find the routing path")
+                # print("Time step: ", self.time_step, "Blocking reason: ", self.G.edges(data=True))
                 self.session_blocking -= 1
             else:
                 # print("Find the routing path")
@@ -264,8 +265,8 @@ class QuantumEnvironment:
 
     def find_routing_path(self):
         # current_node, target_node = random.sample(range(0, self.topology_conf['NUM_QKD_NODE']), 2)
-        current_node, target_node = np.random.choice(np.arange(0, self.topology_conf['NUM_QKD_NODE']), size=2, replace=False)
-        # current_node, target_node = 0, 13
+        # current_node, target_node = np.random.choice(np.arange(0, self.topology_conf['NUM_QKD_NODE']), size=2, replace=False)
+        current_node, target_node = 0, 13
         accumulate_qber = []
         accumulate_num_key = []
         accumulate_count_rate = []
