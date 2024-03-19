@@ -157,7 +157,7 @@ class QuantumEnvironment:
         self.max_time_step = max_time_step
 
         self.topology_conf = topology_conf.nsfnet_topo
-        self.generate_key_time_slot = 50
+        self.generate_key_time_slot = 40
         self.generate_key_size = 50
         # self.generate_key_size = np.random.pareto(1, 1).astype(int)[0] * 20
         self.consume_key_size = 1
@@ -188,7 +188,7 @@ class QuantumEnvironment:
         info = {}
         # self.consume_key_size = max(int(np.random.normal(self.consume_mean, self.consume_std_dev)), 1)
         # self.consume_key_size = np.random.pareto(self.consume_mean, 1).astype(int)[0] + 3
-        self.num_request = np.random.pareto(3, 1).astype(int)[0] * 2
+        self.num_request = np.random.pareto(4, 1).astype(int)[0] * 2
         # print("time step: ", self.time_step, "the number of request: ", self.num_request)
 
         # Cumulative edge key at cumulative size for weighted average num key
@@ -338,7 +338,8 @@ class QuantumEnvironment:
                     else:
                         life_time_weight.append(1)
                 # subnet[edge[0]][edge[1]]['weight'] = len(life_time_weight) * 1 / sum(life_time_weight)
-                subnet[edge[0]][edge[1]]['weight'] = len(life_time_weight) * 1 / sum(life_time_weight)
+                subnet[edge[0]][edge[1]]['weight'] = (len(life_time_weight) * 1) / sum(life_time_weight)
+                # subnet[edge[0]][edge[1]]['weight'] = (len(self.key_pool[edge]) * 1) / sum(self.key_pool[edge])
             routing_path = nx.shortest_path(subnet, current_node, target_node, 'weight')
 
         # Using QBER
@@ -536,7 +537,7 @@ class QuantumEnvironment:
 
 if __name__ == "__main__":
     env = QuantumEnvironment()
-    max_time_step = 1_500_000
+    max_time_step = 5_000_000
     num_simulation = 1
     seed = 0
 
