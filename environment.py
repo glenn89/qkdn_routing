@@ -70,35 +70,43 @@ class QuantumEnvironment:
     def num_key_with_qber(self):
         edges = list(self.G.edges())
         # Update qber and count rate
-        for edge in edges:
-            # qber scope is 1% ~ 15%
-            self.G[edge[0]][edge[1]]['qber'] = min(max(round(np.random.binomial(
-                n=self.G[edge[0]][edge[1]]['count_rate'], p=self.G[edge[0]][edge[1]]['init_qber'] / 100
-            ) / self.G[edge[0]][edge[1]]['count_rate'] * 100), 1), 15)
-
-            if self.time_step != 0:
-                self.G[edge[0]][edge[1]]['count_rate'] = np.random.randint(1, 5) * 100
+        # for edge in edges:
+        #     # qber scope is 1% ~ 15%
+        #     self.G[edge[0]][edge[1]]['qber'] = min(max(round(np.random.binomial(
+        #         n=self.G[edge[0]][edge[1]]['count_rate'], p=self.G[edge[0]][edge[1]]['init_qber'] / 100
+        #     ) / self.G[edge[0]][edge[1]]['count_rate'] * 100), 1), 15)
+        #
+        #     if self.time_step != 0:
+        #         self.G[edge[0]][edge[1]]['count_rate'] = np.random.randint(1, 5) * 100
 
         # Generate key with qber
         for edge in edges:
             error_rate = self.G[edge[0]][edge[1]]['qber'] / 100
             ############# Real key rate version #############
             try:
-                generated_keys = round(
-                    self.generate_key_size * max(
-                        1 + error_rate * np.log2(error_rate) + (1 - error_rate) * np.log2(1 - error_rate), 0
-                    )
-                )
+                # generated_keys = round(
+                #     self.generate_key_size * max(
+                #         1 + error_rate * np.log2(error_rate) + (1 - error_rate) * np.log2(1 - error_rate), 0
+                #     )
+                # )
+                generated_keys = np.random.pareto(3, 1).astype(int)[0] * 80
                 if self.topology_conf['NAME'] == 'BUTTERFLY':
                     if edge[0] == 0 or edge[1] == 5:
                         generated_keys += 10
                 self.total_generation_keys += generated_keys
 
                 # Append key life time
-                for _ in range(generated_keys):
-                    if len(self.key_pool[edge]) + generated_keys > self.key_pool_size:
-                        self.key_pool[edge] = self.key_pool[edge][len(self.key_pool[edge]) + generated_keys - self.key_pool_size:]
-                    self.key_pool[edge].append(self.key_life_time)
+                # Simple topo version and else
+                if self.topology_conf['NAME'] == 'SIMPLE':
+                    self.key_pool[(0, 1)] = [1, 1, 1, 100]
+                    self.key_pool[(0, 2)] = [100, 100, 100, 100, 100, 100]
+                    self.key_pool[(1, 3)] = [1, 1, 1, 100]
+                    self.key_pool[(2, 3)] = [100, 100, 100, 100, 100, 100]
+                else:
+                    for _ in range(generated_keys):
+                        if len(self.key_pool[edge]) + generated_keys > self.key_pool_size:
+                            self.key_pool[edge] = self.key_pool[edge][len(self.key_pool[edge]) + generated_keys - self.key_pool_size:]
+                        self.key_pool[edge].append(self.key_life_time)
 
                 self.G[edge[0]][edge[1]]['num_key'] = len(self.key_pool[edge])
 
@@ -157,14 +165,14 @@ class QuantumEnvironment:
         self.max_time_step = max_time_step
 
         self.topology_conf = topology_conf.nsfnet_topo
-        self.generate_key_time_slot = 40
+        self.generate_key_time_slot = 20
         self.generate_key_size = 50
         # self.generate_key_size = np.random.pareto(1, 1).astype(int)[0] * 20
         self.consume_key_size = 1
         self.consume_mean = 1
         self.consume_std_dev = 2
         self.num_request = 0
-        self.key_life_time = 50
+        self.key_life_time = 100
         self.key_pool_size = 100_000
         self.key_pool = {}
 
@@ -188,8 +196,18 @@ class QuantumEnvironment:
         info = {}
         # self.consume_key_size = max(int(np.random.normal(self.consume_mean, self.consume_std_dev)), 1)
         # self.consume_key_size = np.random.pareto(self.consume_mean, 1).astype(int)[0] + 3
-        self.num_request = np.random.pareto(4, 1).astype(int)[0] * 2
+        if self.topology_conf['NAME'] == 'SIMPLE':
+            if self.time_step == 0:
+                self.num_request = 2
+            if self.time_step == 1:
+                self.num_request = 7
+        else:
+            # self.num_request = np.random.pareto(4, 1).astype(int)[0] * 5
+            # self.num_request = np.random.randint(1, 2, 1)[0]
+            self.num_request = 1
         # print("time step: ", self.time_step, "the number of request: ", self.num_request)
+
+        # print("Time step: ", self.time_step, "/ Num request: ", self.num_request, "/ Keys: ", self.key_pool)
 
         # Cumulative edge key at cumulative size for weighted average num key
         for edge in self.G.edges:
@@ -224,11 +242,11 @@ class QuantumEnvironment:
             #         print("time step: ", self.time_step, "edge: ", i, "num_key: ", len(self.key_pool[i]), self.key_pool[i])
             #         print()
 
-            for u, v, attr in self.G.edges(data=True):
-                self.remaining_keys += attr['num_key']
-                self.key_pool[(u, v)] = [life - 1 for life in self.key_pool[(u, v)]]
-                self.key_pool[(u, v)] = [life for life in self.key_pool[(u, v)] if life >= 1]
-                self.G.edges[(u, v)]['num_key'] = len(self.key_pool[(u, v)])
+        for u, v, attr in self.G.edges(data=True):
+            self.remaining_keys += attr['num_key']
+            self.key_pool[(u, v)] = [life - 1 for life in self.key_pool[(u, v)]]
+            self.key_pool[(u, v)] = [life for life in self.key_pool[(u, v)] if life >= 1]
+            self.G.edges[(u, v)]['num_key'] = len(self.key_pool[(u, v)])
 
         if self.time_step != 0 and self.time_step % self.generate_key_time_slot == 0:
             self.num_key_with_qber()
@@ -338,7 +356,7 @@ class QuantumEnvironment:
                     else:
                         life_time_weight.append(1)
                 # subnet[edge[0]][edge[1]]['weight'] = len(life_time_weight) * 1 / sum(life_time_weight)
-                subnet[edge[0]][edge[1]]['weight'] = (len(life_time_weight) * 1) / sum(life_time_weight)
+                subnet[edge[0]][edge[1]]['weight'] = len(life_time_weight) / sum(life_time_weight)
                 # subnet[edge[0]][edge[1]]['weight'] = (len(self.key_pool[edge]) * 1) / sum(self.key_pool[edge])
             routing_path = nx.shortest_path(subnet, current_node, target_node, 'weight')
 
@@ -537,7 +555,7 @@ class QuantumEnvironment:
 
 if __name__ == "__main__":
     env = QuantumEnvironment()
-    max_time_step = 5_000_000
+    max_time_step = 300_000
     num_simulation = 1
     seed = 0
 
