@@ -89,7 +89,9 @@ class QuantumEnvironment:
                 #         1 + error_rate * np.log2(error_rate) + (1 - error_rate) * np.log2(1 - error_rate), 0
                 #     )
                 # )
-                generated_keys = np.random.pareto(3, 1).astype(int)[0] * 80
+                generated_keys = self.generate_key_size - np.random.pareto(1.5, 1).astype(int)[0] * 30
+                if generated_keys < 0:
+                    generated_keys = 0
                 if self.topology_conf['NAME'] == 'BUTTERFLY':
                     if edge[0] == 0 or edge[1] == 5:
                         generated_keys += 10
@@ -109,8 +111,6 @@ class QuantumEnvironment:
                         self.key_pool[edge].append(self.key_life_time)
 
                 self.G[edge[0]][edge[1]]['num_key'] = len(self.key_pool[edge])
-
-                
             except ValueError as e:
                 print(error_rate, e)
             # generated_keys = self.generate_key_size
@@ -164,9 +164,9 @@ class QuantumEnvironment:
         np.random.seed(self.num_seed)
         self.max_time_step = max_time_step
 
-        self.topology_conf = topology_conf.nsfnet_topo
-        self.generate_key_time_slot = 20
-        self.generate_key_size = 50
+        self.topology_conf = topology_conf.cost266_topo
+        self.generate_key_time_slot = 10
+        self.generate_key_size = 20
         # self.generate_key_size = np.random.pareto(1, 1).astype(int)[0] * 20
         self.consume_key_size = 1
         self.consume_mean = 1
@@ -220,7 +220,7 @@ class QuantumEnvironment:
         for _ in range(self.num_request):
             routing_path = self.find_routing_path()
             # if self.metric_type == 'num_key':
-            #     print("time step: ", self.time_step, "routing path: ", routing_path)
+            # print("time step: ", self.time_step, "routing path: ", routing_path)
             #     self.plot_topology()
 
             if not routing_path:
@@ -283,8 +283,8 @@ class QuantumEnvironment:
 
     def find_routing_path(self):
         # current_node, target_node = random.sample(range(0, self.topology_conf['NUM_QKD_NODE']), 2)
-        # current_node, target_node = np.random.choice(np.arange(0, self.topology_conf['NUM_QKD_NODE']), size=2, replace=False)
-        current_node, target_node = 0, 13
+        current_node, target_node = np.random.choice(np.arange(0, self.topology_conf['NUM_QKD_NODE']), size=2, replace=False)
+        # current_node, target_node = 0, 13
         accumulate_qber = []
         accumulate_num_key = []
         accumulate_count_rate = []
@@ -555,7 +555,7 @@ class QuantumEnvironment:
 
 if __name__ == "__main__":
     env = QuantumEnvironment()
-    max_time_step = 300_000
+    max_time_step = 200_000
     num_simulation = 1
     seed = 0
 
@@ -567,25 +567,25 @@ if __name__ == "__main__":
     weighted_shortest_average_used_keys, shortest_average_used_keys, qber_average_used_keys, num_key_average_used_keys, combination_average_used_keys = 0, 0, 0, 0, 0
 
     # Shortest path simulation
-    env.metric_type = 'simple_shortest'
-    env.reset(seed=seed, max_time_step=max_time_step)
-    # env.plot_topology()
-    for _ in range(num_simulation):
-        env.reset(seed=seed, max_time_step=max_time_step)
-        for _ in range(max_time_step):
-            shortest_reward, info = env.step()
-        shortest_average_reward += shortest_reward
-        shortest_average_session_blocking += info['session_blocking']
-        shortest_average_total_generation_keys += info['total_generation_keys']
-        shortest_average_remaining_keys += info['remaining_keys']
-        shortest_average_used_keys += info['used_keys']
-        seed += 1
-    shortest_average_reward /= num_simulation
-    shortest_average_session_blocking /= num_simulation
-    shortest_average_total_generation_keys /= num_simulation
-    shortest_average_remaining_keys /= num_simulation
-    shortest_average_used_keys /= num_simulation
-    seed = 0
+    # env.metric_type = 'simple_shortest'
+    # env.reset(seed=seed, max_time_step=max_time_step)
+    # # env.plot_topology()
+    # for _ in range(num_simulation):
+    #     env.reset(seed=seed, max_time_step=max_time_step)
+    #     for _ in range(max_time_step):
+    #         shortest_reward, info = env.step()
+    #     shortest_average_reward += shortest_reward
+    #     shortest_average_session_blocking += info['session_blocking']
+    #     shortest_average_total_generation_keys += info['total_generation_keys']
+    #     shortest_average_remaining_keys += info['remaining_keys']
+    #     shortest_average_used_keys += info['used_keys']
+    #     seed += 1
+    # shortest_average_reward /= num_simulation
+    # shortest_average_session_blocking /= num_simulation
+    # shortest_average_total_generation_keys /= num_simulation
+    # shortest_average_remaining_keys /= num_simulation
+    # shortest_average_used_keys /= num_simulation
+    # seed = 0
     # env.plot_topology()
     # env.plot_heatmap()
 
@@ -690,7 +690,7 @@ if __name__ == "__main__":
     print()
     print("Average Results:")
     print(f"{'Metric':<20}{'Success':<10}{'Session Blocking':<20}{'Total generation keys':<25}{'Used keys':<20}{'Used percentage':<10}")
-    print(f"{'simple_shortest':<20}{shortest_average_reward:<10}{shortest_average_session_blocking:<20}{shortest_average_total_generation_keys:<25}{shortest_average_used_keys:<20}{(shortest_average_used_keys/shortest_average_total_generation_keys) * 100:<4.2f}%")
+    # print(f"{'simple_shortest':<20}{shortest_average_reward:<10}{shortest_average_session_blocking:<20}{shortest_average_total_generation_keys:<25}{shortest_average_used_keys:<20}{(shortest_average_used_keys/shortest_average_total_generation_keys) * 100:<4.2f}%")
     print(f"{'weighted_shortest':<20}{weighted_shortest_average_reward:<10}{weighted_shortest_average_session_blocking:<20}{weighted_shortest_average_total_generation_keys:<25}{weighted_shortest_average_used_keys:<20}{(weighted_shortest_average_used_keys / weighted_shortest_average_total_generation_keys) * 100:<4.2f}%")
     print(f"{'life_time_shortest':<20}{qber_average_reward:<10}{qber_average_session_blocking:<20}{qber_average_total_generation_keys:<25}{qber_average_used_keys:<20}{(qber_average_used_keys/qber_average_total_generation_keys) * 100:<4.2f}%")
     # print(f"{'Num keys':<20}{num_key_average_reward:<10}{num_key_average_session_blocking:<20}{num_key_average_total_generation_keys:<25}{num_key_average_used_keys:<20}{(num_key_average_used_keys/num_key_average_total_generation_keys) * 100:<4.2f}%")
