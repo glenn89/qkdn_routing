@@ -2,6 +2,7 @@ import gym
 import collections
 import random
 import networkx as nx
+import matplotlib.pyplot as plt
 
 import torch
 import torch.nn as nn
@@ -62,10 +63,12 @@ class Qnet(nn.Module):
         out = self.forward(obs)
         coin = random.random()
 
-        paths = nx.shortest_simple_paths(state['graph'], source=1, target=3)
+        paths = nx.shortest_simple_paths(state['graph'], source=0, target=3)
         candidate_paths = []
-        candidate_paths.append([0, 1, 3])
-        candidate_paths.append([0, 2, 3])
+        for _ in range(2):
+            candidate_paths.append(next(paths))
+        # candidate_paths.append([0, 1, 3])
+        # candidate_paths.append([0, 2, 3])
         if coin < epsilon:
             rand_idx = random.randint(0, 1)
             return candidate_paths[rand_idx], rand_idx
@@ -96,10 +99,11 @@ def main():
     q_target.load_state_dict(q.state_dict())
     memory = ReplayBuffer()
 
-    max_episode = 20000
+    max_episode = 50000
     print_interval = 20
     score = 0.0
     high_score = 0.0
+    scores = []
     optimizer = optim.Adam(q.parameters(), lr=learning_rate)
 
     for n_epi in range(max_episode):
@@ -124,15 +128,23 @@ def main():
         if n_epi % print_interval == 0 and n_epi != 0:
             if high_score <= score:
                 high_score = score
-                torch.save(q.state_dict(), "model_save\highest_model")
+                torch.save(q.state_dict(), "model_save\highest_model_best")
                 print("Best model saved")
             q_target.load_state_dict(q.state_dict())
             print("n_episode :{}, score : {:.1f}, n_buffer : {}, eps : {:.1f}%".format(
                 n_epi, score / print_interval, memory.size(), epsilon * 100))
+            scores.append(score)
             score = 0.0
         if n_epi == max_episode - 1:
             torch.save(q.state_dict(), "model_save\highest_model_final")
             print("Final model saved")
+            # Generate training result graph
+            plt.plot(scores, linestyle='-')
+            plt.xlabel('Episode')
+            plt.ylabel('Training Reward')
+            plt.title('Training results')
+            plt.grid(True)
+            plt.show()
 
     # env.close()
 

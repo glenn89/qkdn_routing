@@ -89,7 +89,9 @@ class QuantumEnvironment:
                 #         1 + error_rate * np.log2(error_rate) + (1 - error_rate) * np.log2(1 - error_rate), 0
                 #     )
                 # )
+                # np.random.seed(self.num_seed)
                 generated_keys = self.generate_key_size - np.random.pareto(1.5, 1).astype(int)[0] * 30
+                np.random.seed()
                 # print("Gen key: ", generated_keys)
                 if generated_keys < 0:
                     generated_keys = 0
@@ -164,11 +166,11 @@ class QuantumEnvironment:
         plt.show()
 
     def reset(self, seed, max_time_step):
-        self.num_seed = seed
-        np.random.seed(self.num_seed)
+        # self.num_seed = seed
+        # np.random.seed(self.num_seed)
         self.max_time_step = max_time_step
 
-        self.topology_conf = topology_conf.simple_topo
+        self.topology_conf = topology_conf.cost266_topo
         self.generate_key_time_slot = 30
         self.generate_key_size = 50
         # self.generate_key_size = np.random.pareto(1, 1).astype(int)[0] * 20
@@ -641,7 +643,7 @@ class QuantumEnvironment:
 
 if __name__ == "__main__":
     env = QuantumEnvironment()
-    max_time_step = 2
+    max_time_step = 2_000
     num_simulation = 1
     seed = 0
     action = []
@@ -683,7 +685,7 @@ if __name__ == "__main__":
     for _ in range(num_simulation):
         s, _ = env.reset(seed=seed, max_time_step=max_time_step)
         for _ in range(max_time_step):
-            weighted_shortest_reward, info = env.step(action)
+            _, weighted_shortest_reward, _, _, info = env.step(action)
         weighted_shortest_average_reward += weighted_shortest_reward
         weighted_shortest_average_session_blocking += info['session_blocking']
         weighted_shortest_average_total_generation_keys += info['total_generation_keys']
@@ -706,7 +708,7 @@ if __name__ == "__main__":
     for _ in range(num_simulation):
         s, _ = env.reset(seed=seed, max_time_step=max_time_step)
         for _ in range(max_time_step):
-            qber_reward, info = env.step(action)
+            _, qber_reward, _, _, info = env.step(action)
         qber_average_reward += qber_reward
         qber_average_session_blocking += info['session_blocking']
         qber_average_total_generation_keys += info['total_generation_keys']
