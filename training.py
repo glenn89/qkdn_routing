@@ -13,7 +13,7 @@ from environment import QuantumEnvironment
 
 # Hyperparameters
 learning_rate = 0.0005
-gamma = 0.98
+gamma = 0.97
 buffer_limit = 50000
 batch_size = 32
 
@@ -99,7 +99,7 @@ def main():
     q_target.load_state_dict(q.state_dict())
     memory = ReplayBuffer()
 
-    max_episode = 50000
+    max_episode = 25000
     print_interval = 20
     score = 0.0
     high_score = 0.0
@@ -107,7 +107,7 @@ def main():
     optimizer = optim.Adam(q.parameters(), lr=learning_rate)
 
     for n_epi in range(max_episode):
-        epsilon = max(0.01, 0.8 - 0.01 * (n_epi / 200))  # Linear annealing from 8% to 1%
+        epsilon = max(0.01, 0.8 - 0.02 * (n_epi / 200))  # Linear annealing from 8% to 1%
         s, _ = env.reset(0, 9)
         done = False
 

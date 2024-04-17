@@ -71,7 +71,7 @@ if __name__ == "__main__":
 
     # 시뮬레이션 파라미터 설정
     steps = 1000  # 시뮬레이션 스텝 수
-    alpha = 1     # 파레토 분포의 모수
+    alpha = 1.5     # 파레토 분포의 모수
 
     # 패킷 생성 시뮬레이션
     simulate_packet_generation(steps, alpha)

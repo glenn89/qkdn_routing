@@ -91,7 +91,7 @@ class QuantumEnvironment:
                 # )
                 # np.random.seed(self.num_seed)
                 generated_keys = self.generate_key_size - np.random.pareto(1.5, 1).astype(int)[0] * 30
-                np.random.seed()
+                # np.random.seed()
                 # print("Gen key: ", generated_keys)
                 if generated_keys < 0:
                     generated_keys = 0
@@ -166,13 +166,13 @@ class QuantumEnvironment:
         plt.show()
 
     def reset(self, seed, max_time_step):
-        # self.num_seed = seed
-        # np.random.seed(self.num_seed)
+        self.num_seed = seed
+        np.random.seed(self.num_seed)
         self.max_time_step = max_time_step
 
-        self.topology_conf = topology_conf.cost266_topo
-        self.generate_key_time_slot = 30
-        self.generate_key_size = 50
+        self.topology_conf = topology_conf.nsfnet_topo
+        self.generate_key_time_slot = 50
+        self.generate_key_size = 100
         # self.generate_key_size = np.random.pareto(1, 1).astype(int)[0] * 20
         self.consume_key_size = 1
         self.consume_mean = 1
@@ -219,8 +219,8 @@ class QuantumEnvironment:
             source_node, target_node = 0, 3
         else:
             # source_node, target_node = random.sample(range(0, self.topology_conf['NUM_QKD_NODE']), 2)
-            source_node, target_node = np.random.choice(np.arange(0, self.topology_conf['NUM_QKD_NODE']), size=2, replace=False)
-            # source_node, target_node = 0, 13
+            # source_node, target_node = np.random.choice(np.arange(0, self.topology_conf['NUM_QKD_NODE']), size=2, replace=False)
+            source_node, target_node = 0, self.topology_conf['NUM_QKD_NODE'] - 1
 
         # self.consume_key_size = max(int(np.random.normal(self.consume_mean, self.consume_std_dev)), 1)
         # self.consume_key_size = np.random.pareto(self.consume_mean, 1).astype(int)[0] + 3
@@ -643,7 +643,7 @@ class QuantumEnvironment:
 
 if __name__ == "__main__":
     env = QuantumEnvironment()
-    max_time_step = 2_000
+    max_time_step = 20_000
     num_simulation = 1
     seed = 0
     action = []
