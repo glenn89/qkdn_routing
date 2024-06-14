@@ -14,7 +14,7 @@ from environment import QuantumEnvironment
 class Qnet(nn.Module):
     def __init__(self):
         super(Qnet, self).__init__()
-        self.fc1 = nn.Linear(4, 128)
+        self.fc1 = nn.Linear(12, 128)
         self.fc2 = nn.Linear(128, 128)
         self.fc3 = nn.Linear(128, 2)
 
@@ -44,7 +44,7 @@ def main():
     # env = gym.make('CartPole-v1')
     env = QuantumEnvironment()
     q = Qnet()
-    q.load_state_dict(torch.load('model_save\highest_model_final'), strict=False)
+    q.load_state_dict(torch.load('model_save\highest_model_best'), strict=False)
 
     for n_epi in range(1):
         epsilon = 0.0  # Linear annealing from 8% to 1%

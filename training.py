@@ -14,7 +14,7 @@ from environment import QuantumEnvironment
 # Hyperparameters
 learning_rate = 0.0005
 gamma = 0.97
-buffer_limit = 50000
+buffer_limit = 5000
 batch_size = 32
 
 
@@ -48,27 +48,31 @@ class ReplayBuffer():
 class Qnet(nn.Module):
     def __init__(self):
         super(Qnet, self).__init__()
-        self.fc1 = nn.Linear(4, 128)
-        self.fc2 = nn.Linear(128, 128)
-        self.fc3 = nn.Linear(128, 2)
+        self.conv1 = nn.Conv2d(2, 16, kernel_size=3, padding=1)
+        self.conv2 = nn.Conv2d(16, 32, kernel_size=3, padding=1)
+        self.fc1 = nn.Linear(32 * 14 * 14, 128)
+        self.fc2 = nn.Linear(128, 3)  # output class
 
     def forward(self, x):
-        x = F.relu(self.fc1(x))
-        x = F.relu(self.fc2(x))
-        x = self.fc3(x)
+        x = self.conv1(x)
+        x = nn.ReLU()(x)
+        x = self.conv2(x)
+        x = nn.ReLU()(x)
+        x = x.view(x.size(0), -1)  # flatten
+        x = self.fc1(x)
+        x = nn.ReLU()(x)
+        x = self.fc2(x)
+        x = nn.Softmax()(x)
+
         return x
 
     def sample_action(self, state, epsilon):
         obs = torch.from_numpy(state['obs']).float()
+        obs_p =
         out = self.forward(obs)
         coin = random.random()
 
-        paths = nx.shortest_simple_paths(state['graph'], source=0, target=3)
-        candidate_paths = []
-        for _ in range(2):
-            candidate_paths.append(next(paths))
-        # candidate_paths.append([0, 1, 3])
-        # candidate_paths.append([0, 2, 3])
+        candidate_paths = state['paths']
         if coin < epsilon:
             rand_idx = random.randint(0, 1)
             return candidate_paths[rand_idx], rand_idx
@@ -79,6 +83,8 @@ class Qnet(nn.Module):
 def train(q, q_target, memory, optimizer):
     for i in range(10):
         s, a, r, s_prime, done_mask = memory.sample(batch_size)
+        s = s.squeeze(1)    # Reshape: s shape: [32, 1, 2, x, x] --> [32, 2, x, x]
+        s_prime = s_prime.squeeze(1)
 
         q_out = q(s)
         q_a = q_out.gather(1, a)
@@ -93,13 +99,13 @@ def train(q, q_target, memory, optimizer):
 
 def main():
     # env = gym.make('CartPole-v1')
-    env = QuantumEnvironment()
+    env = QuantumEnvironment(topology_type='NSFNET')
     q = Qnet()
     q_target = Qnet()
     q_target.load_state_dict(q.state_dict())
     memory = ReplayBuffer()
 
-    max_episode = 25000
+    max_episode = 1500
     print_interval = 20
     score = 0.0
     high_score = 0.0
@@ -107,7 +113,7 @@ def main():
     optimizer = optim.Adam(q.parameters(), lr=learning_rate)
 
     for n_epi in range(max_episode):
-        epsilon = max(0.01, 0.8 - 0.02 * (n_epi / 200))  # Linear annealing from 8% to 1%
+        epsilon = max(0.01, 0.9 - 0.2 * (n_epi / 200))  # Linear annealing from 90% to 1%
         s, _ = env.reset(0, 9)
         done = False
 
@@ -133,8 +139,10 @@ def main():
             q_target.load_state_dict(q.state_dict())
             print("n_episode :{}, score : {:.1f}, n_buffer : {}, eps : {:.1f}%".format(
                 n_epi, score / print_interval, memory.size(), epsilon * 100))
-            scores.append(score)
-            score = 0.0
+
+        scores.append(score)
+        score = 0.0
+
         if n_epi == max_episode - 1:
             torch.save(q.state_dict(), "model_save\highest_model_final")
             print("Final model saved")

@@ -7,9 +7,16 @@ import topology_conf
 
 
 class QuantumEnvironment:
-    def __init__(self):
+    def __init__(self, topology_type):
         self.G = None
-        self.topology_conf = None
+        self.topology_list = {
+            'SIMPLE': topology_conf.simple_topo,
+            'BUTTERFLY': topology_conf.butterfly_topo,
+            'KREONET': topology_conf.kreonet_topo,
+            'NSFNET': topology_conf.nsfnet_topo,
+            'COST266': topology_conf.cost266_topo
+        }
+        self.topology_conf = self.topology_list[topology_type]
         self.metric_type = 'qber'   # type: 'simple_shortest', 'weighted_shortest', 'qber', 'num_key', 'combination'
         self.num_seed = 0
         self.max_time_step = 0
@@ -31,6 +38,7 @@ class QuantumEnvironment:
         self.remaining_keys = 0
         self.used_keys = 0
 
+        self.k = 0
         self.reward = 0
         self.mean_value = 0
         self.std_deviation = 0
@@ -89,9 +97,13 @@ class QuantumEnvironment:
                 #         1 + error_rate * np.log2(error_rate) + (1 - error_rate) * np.log2(1 - error_rate), 0
                 #     )
                 # )
-                # np.random.seed(self.num_seed)
-                generated_keys = self.generate_key_size - np.random.pareto(1.5, 1).astype(int)[0] * 30
                 # np.random.seed()
+                ######### Apply Pareto distribution #########
+                # generated_keys = self.generate_key_size - np.random.pareto(1.5, 1).astype(int)[0] * 100
+                # np.random.seed(self.num_seed)
+                ######### Apply static generated key #########
+                generated_keys = self.generate_key_size
+
                 # print("Gen key: ", generated_keys)
                 if generated_keys < 0:
                     generated_keys = 0
@@ -166,19 +178,18 @@ class QuantumEnvironment:
         plt.show()
 
     def reset(self, seed, max_time_step):
-        self.num_seed = seed
-        np.random.seed(self.num_seed)
+        # self.num_seed = seed
+        # np.random.seed(self.num_seed)
         self.max_time_step = max_time_step
 
-        self.topology_conf = topology_conf.nsfnet_topo
-        self.generate_key_time_slot = 50
-        self.generate_key_size = 100
+        self.generate_key_time_slot = 15
+        self.generate_key_size = 2
         # self.generate_key_size = np.random.pareto(1, 1).astype(int)[0] * 20
         self.consume_key_size = 1
         self.consume_mean = 1
         self.consume_std_dev = 2
         self.num_request = 0
-        self.key_life_time = 50
+        self.key_life_time = 20
         self.key_pool_size = 100_000
         self.key_pool = {}
 
@@ -187,6 +198,7 @@ class QuantumEnvironment:
         self.total_generation_keys = 0
         self.remaining_keys = 0
         self.used_keys = 0
+        self.k = 3
         self.reward = 0
         self.alpha = 0.0001
 
@@ -199,13 +211,15 @@ class QuantumEnvironment:
         for edge in self.G.edges:
             self.cumulative_edge_keys[edge] = []
 
-        self.calculate_based_lifetime_weight(self.G)
-        state = {}
-        state['obs'] = np.array([])
-        state['graph'] = self.G
-        for u, v, d in self.G.edges(data=True):
-            state['obs'] = np.append(state['obs'], d['weight'])
+        # self.calculate_based_lifetime_weight(self.G)
+        self.calculate_based_num_key_weight(self.G)
+
+        # source_node, target_node = np.random.choice(np.arange(0, self.topology_conf['NUM_QKD_NODE']), size=2, replace=False)
+        source_node, target_node = 0, self.topology_conf['NUM_QKD_NODE'] - 1
+
+        state = self.generate_state(source_node, target_node)
         info = {}
+        # self.observation_space = spaces
 
         return state, info
 
@@ -234,9 +248,7 @@ class QuantumEnvironment:
             # self.num_request = np.random.randint(1, 2, 1)[0]
             self.num_request = 1
         # print("time step: ", self.time_step, "the number of request: ", self.num_request)
-
         # print("Time step: ", self.time_step, "/ Num request: ", self.num_request, "/ Keys: ", self.key_pool)
-
         # print(u, v, d['num_key'], d['weight'])
 
         # Cumulative edge key at cumulative size for weighted average num key
@@ -300,10 +312,8 @@ class QuantumEnvironment:
         # print(self.metric_type, self.G.edges(data=True))
 
         self.calculate_based_lifetime_weight(self.G)
-        state['obs'] = np.array([])
-        state['graph'] = self.G
-        for u, v, d in self.G.edges(data=True):
-            state['obs'] = np.append(state['obs'], d['weight'])
+
+        state = self.generate_state(source_node, target_node)
         next_state = state
 
         self.time_step += 1
@@ -320,6 +330,18 @@ class QuantumEnvironment:
             done = True
 
         return next_state, self.reward, done, truncated, info
+
+    def generate_state(self, source_node, target_node):
+        state = {}
+        # Configurate state
+        adj_matrix_np = nx.to_numpy_array(self.G, weight=None)
+        weight_matrix_np = nx.to_numpy_array(self.G, weight='num_key')
+        state['obs'] = np.stack([adj_matrix_np, weight_matrix_np], axis=0)  # staked (2, H, W)
+        state['obs'] = state['obs'][np.newaxis, :]  # shape convert (1, 2, H, W)
+
+        state['paths'] = self.find_k_shortest_path(source_node, target_node)
+
+        return state
 
     def temp_shrotest_path(self, source_node, target_node, weight):
         copied_G = copy.deepcopy(self.G)
@@ -358,6 +380,7 @@ class QuantumEnvironment:
                     result = False
 
         return result
+
     def calculate_based_lifetime_weight(self, net):
         for edge in net.edges:
             life_time_weight = []
@@ -369,10 +392,43 @@ class QuantumEnvironment:
                 else:
                     life_time_weight.append(1)
             if sum(life_time_weight) != 0:
-                net[edge[0]][edge[1]]['weight'] = len(life_time_weight) / sum(life_time_weight)
-                # net[edge[0]][edge[1]]['weight'] = (len(self.key_pool[edge]) * 1) / sum(self.key_pool[edge])
+                # net[edge[0]][edge[1]]['weight'] = len(life_time_weight) / sum(life_time_weight)
+                net[edge[0]][edge[1]]['weight'] = (len(self.key_pool[edge]) * 1) / sum(self.key_pool[edge])
             elif sum(life_time_weight) == 0:
                 net[edge[0]][edge[1]]['weight'] = 0.0
+
+    def calculate_based_num_key_weight(self, net):
+        for edge in net.edges:
+            life_time_weight = []
+            for key_life in self.key_pool[edge]:
+                life_time_weight.append(1)
+            if sum(life_time_weight) != 0:
+                # net[edge[0]][edge[1]]['weight'] = len(life_time_weight) / sum(life_time_weight)
+                net[edge[0]][edge[1]]['weight'] = 1 / sum(self.key_pool[edge])
+            elif sum(life_time_weight) == 0:
+                net[edge[0]][edge[1]]['weight'] = 0.0
+
+    def find_k_shortest_path(self, source_node, target_node):
+        copied_G = copy.deepcopy(self.G)
+        subnet = nx.subgraph_view(
+            copied_G,
+            filter_edge=lambda node_1_id, node_2_id: \
+                True if copied_G.edges[(node_1_id, node_2_id)]['num_key'] >= self.consume_key_size else False
+        )
+        paths = []
+        if len(subnet.edges) == 0 or not nx.has_path(subnet, source=source_node, target=target_node):
+            for _ in range(self.k):
+                paths.append([])
+            routing_path = paths
+            return routing_path
+
+        # routing_path = nx.shortest_path(subnet, 0, 5)
+        for edge in subnet.edges:
+            subnet[edge[0]][edge[1]]['weight'] = 1 / subnet[edge[0]][edge[1]]['num_key']
+        paths = list(nx.shortest_simple_paths(subnet, source_node, target_node, 'weight'))
+        routing_path = paths[:self.k]
+
+        return routing_path
 
     def find_routing_path(self, source_node, target_node):
         accumulate_qber = []
@@ -642,8 +698,8 @@ class QuantumEnvironment:
 
 
 if __name__ == "__main__":
-    env = QuantumEnvironment()
-    max_time_step = 20_000
+    env = QuantumEnvironment(topology_type='COST266')
+    max_time_step = 1_000
     num_simulation = 1
     seed = 0
     action = []
