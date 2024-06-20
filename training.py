@@ -68,7 +68,8 @@ class Qnet(nn.Module):
 
     def sample_action(self, state, epsilon):
         obs = torch.from_numpy(state['obs']).float()
-        obs_p =
+        # path 구성하기
+        # obs_p
         out = self.forward(obs)
         coin = random.random()
 

@@ -340,6 +340,13 @@ class QuantumEnvironment:
         state['obs'] = state['obs'][np.newaxis, :]  # shape convert (1, 2, H, W)
 
         state['paths'] = self.find_k_shortest_path(source_node, target_node)
+        paths_info = []
+        paths_index = self.k * 2
+        for path in state['paths']:
+            paths_info.append(len(path))
+            paths_index += paths_index
+            paths_info.append(paths_index)
+
 
         return state
 
