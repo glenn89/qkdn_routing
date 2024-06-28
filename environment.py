@@ -155,14 +155,15 @@ class QuantumEnvironment:
             0: [2, 12], 1: [4, 14], 2: [4, 10], 3: [8, 14], 4: [8, 10], 5: [10, 12]
         }
         edge_labels = {}
+        pos = nx.spring_layout(self.G)
 
         # nx.draw(self.G, pos=position, node_color=self.topology_conf['QKD_NODES_COLOR_MAP'], with_labels=True)
-        nx.draw(self.G, with_labels=True)
+        nx.draw(self.G, pos, with_labels=True)
         # labels = nx.get_edge_attributes(self.G, 'count_rate')
         for u, v, attr in self.G.edges(data=True):
-            edge_labels[(u, v)] = "{0}/{1}\n{2}\n{3}".format(attr['qber'], attr['count_rate'], attr['num_key'], attr['weight'])
+            edge_labels[(u, v)] = "{0}".format(attr['num_key'])
         # nx.draw_networkx_edge_labels(self.G, position, edge_labels=edge_labels)
-        # nx.draw_networkx_edge_labels(self.G, edge_labels=edge_labels)
+        nx.draw_networkx_edge_labels(self.G, pos, edge_labels=edge_labels)
         plt.show()
 
     def plot_heatmap(self):
@@ -326,6 +327,11 @@ class QuantumEnvironment:
             'graph': self.G
         }
 
+        # Check environment | reflect action | reduction resource
+        # print(self.time_step, action)
+        # print(self.max_time_step, self.reward)
+        # self.plot_topology()
+
         if self.max_time_step == self.time_step:
             done = True
 
@@ -342,11 +348,18 @@ class QuantumEnvironment:
         state['paths'] = self.find_k_shortest_path(source_node, target_node)
         paths_info = []
         paths_index = self.k * 2
+        start_index = 0
         for path in state['paths']:
             paths_info.append(len(path))
-            paths_index += paths_index
-            paths_info.append(paths_index)
+            paths_info.append(paths_index + start_index)
+            start_index += len(path)
+        flattened_paths = [node for path in state['paths'] for node in path]
+        paths_info.extend(flattened_paths)
+        # state['paths'] = paths_info
 
+        # Transform np.array
+        state['obs'] = np.array(state['obs'])
+        # state['paths'] = np.array(state['paths'])
 
         return state
 
@@ -433,6 +446,11 @@ class QuantumEnvironment:
         for edge in subnet.edges:
             subnet[edge[0]][edge[1]]['weight'] = 1 / subnet[edge[0]][edge[1]]['num_key']
         paths = list(nx.shortest_simple_paths(subnet, source_node, target_node, 'weight'))
+
+        if len(paths) < self.k:
+            for _ in range(self.k - len(paths)):
+                paths.append([])
+
         routing_path = paths[:self.k]
 
         return routing_path

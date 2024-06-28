@@ -1,4 +1,3 @@
-import gym
 import collections
 import random
 import networkx as nx
@@ -62,23 +61,27 @@ class Qnet(nn.Module):
         x = self.fc1(x)
         x = nn.ReLU()(x)
         x = self.fc2(x)
-        x = nn.Softmax()(x)
+        x = F.softmax(x, dim=1)
 
         return x
 
     def sample_action(self, state, epsilon):
-        obs = torch.from_numpy(state['obs']).float()
-        # path 구성하기
-        # obs_p
-        out = self.forward(obs)
-        coin = random.random()
+        try:
+            obs = torch.from_numpy(state['obs']).float()
+            # path 구성하기
+            # obs_p
+            out = self.forward(obs)
+            coin = random.random()
 
-        candidate_paths = state['paths']
-        if coin < epsilon:
-            rand_idx = random.randint(0, 1)
-            return candidate_paths[rand_idx], rand_idx
-        else:
-            return candidate_paths[out.argmax().item()], out.argmax().item()
+            candidate_paths = state['paths']
+
+            if coin < epsilon:
+                rand_idx = random.randint(0, 1)
+                return candidate_paths[rand_idx], rand_idx
+            else:
+                return candidate_paths[out.argmax().item()], out.argmax().item()
+        except:
+            print(candidate_paths)
 
 
 def train(q, q_target, memory, optimizer):
@@ -115,7 +118,7 @@ def main():
 
     for n_epi in range(max_episode):
         epsilon = max(0.01, 0.9 - 0.2 * (n_epi / 200))  # Linear annealing from 90% to 1%
-        s, _ = env.reset(0, 9)
+        s, _ = env.reset(0, 20)
         done = False
 
         while not done:
