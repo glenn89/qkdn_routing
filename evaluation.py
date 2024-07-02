@@ -1,4 +1,3 @@
-import gym
 import collections
 import random
 import networkx as nx
@@ -14,41 +13,66 @@ from environment import QuantumEnvironment
 class Qnet(nn.Module):
     def __init__(self):
         super(Qnet, self).__init__()
-        self.fc1 = nn.Linear(12, 128)
-        self.fc2 = nn.Linear(128, 128)
-        self.fc3 = nn.Linear(128, 2)
+        self.conv1 = nn.Conv2d(2, 16, kernel_size=3, padding=1)
+        self.conv2 = nn.Conv2d(16, 32, kernel_size=3, padding=1)
+        self.fc1 = nn.Linear(32 * 14 * 14 + 32, 128)
+        self.fc2 = nn.Linear(128, 3)  # output class
 
-    def forward(self, x):
-        x = F.relu(self.fc1(x))
-        x = F.relu(self.fc2(x))
-        x = self.fc3(x)
-        return x
+        self.path_fc1 = nn.Linear(64, 128)
+        self.path_fc2 = nn.Linear(128, 32)
+
+    def forward(self, x, y):
+        # input state['obs']
+        x = self.conv1(x)
+        x = nn.ReLU()(x)
+        x = self.conv2(x)
+        x = nn.ReLU()(x)
+        x = x.view(x.size(0), -1)  # flatten
+
+        y = self.path_fc1(y)
+        y = self.path_fc2(y)
+        y = y.view(-1, y.size(0))  # flatten
+
+        z = torch.cat((x, y), dim=1)
+
+        z = self.fc1(z)
+        z = nn.ReLU()(z)
+        z = self.fc2(z)
+        z = F.softmax(z, dim=1)
+
+        # input state['flat_paths']
+
+        return z
 
     def sample_action(self, state, epsilon):
-        obs = torch.from_numpy(state['obs']).float()
-        out = self.forward(obs)
-        coin = random.random()
+        try:
+            obs = torch.from_numpy(state['obs']).float()
+            obs_path = torch.from_numpy(state['flat_paths']).float()
+            # path 구성하기
+            # obs_p
+            out = self.forward(obs, obs_path)
+            coin = random.random()
 
-        paths = nx.shortest_simple_paths(state['graph'], source=1, target=3)
-        candidate_paths = []
-        candidate_paths.append([0, 1, 3])
-        candidate_paths.append([0, 2, 3])
-        if coin < epsilon:
-            rand_idx = random.randint(0, 1)
-            return candidate_paths[rand_idx], rand_idx
-        else:
-            return candidate_paths[out.argmax().item()], out.argmax().item()
+            candidate_paths = state['paths']
+
+            if coin < epsilon:
+                rand_idx = random.randint(0, 1)
+                return candidate_paths[rand_idx], rand_idx
+            else:
+                return candidate_paths[out.argmax().item()], out.argmax().item()
+        except:
+            print(candidate_paths)
 
 
 def main():
     # env = gym.make('CartPole-v1')
-    env = QuantumEnvironment()
+    env = QuantumEnvironment(topology_type='NSFNET')
     q = Qnet()
     q.load_state_dict(torch.load('model_save\highest_model_best'), strict=False)
 
     for n_epi in range(1):
         epsilon = 0.0  # Linear annealing from 8% to 1%
-        s, _ = env.reset(0, 9)
+        s, _ = env.reset(0, 20)
         done = False
         time_step = 0
 
@@ -56,6 +80,8 @@ def main():
             a, out = q.sample_action(s, epsilon)
             s_prime, r, done, truncated, info = env.step(a)
             done_mask = 0.0 if done else 1.0
+            if not done:
+                print("candidate routing paths: ", s['paths'])
             s = s_prime
 
             score = r
@@ -63,7 +89,8 @@ def main():
             if done:
                 break
 
-            print("time step :{}, score : {:.1f}, action: {}".format(time_step, score, a))
+            print("time step :{}, score : {:.1f}, action_index: {}, action: {}".format(time_step, score, out, a))
+            print()
         score = 0.0
     # env.close()
 

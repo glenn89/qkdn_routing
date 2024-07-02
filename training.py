@@ -26,19 +26,21 @@ class ReplayBuffer():
 
     def sample(self, n):
         mini_batch = random.sample(self.buffer, n)
-        s_lst, a_lst, r_lst, s_prime_lst, done_mask_lst = [], [], [], [], []
+        s_lst, s_p_lst, a_lst, r_lst, s_prime_lst, s_p_prime_lst, done_mask_lst = [], [], [], [], [], [], []
 
         for transition in mini_batch:
             s, a, r, s_prime, done_mask = transition
             s_lst.append(s['obs'])
+            s_p_lst.append(s['flat_paths'])
             a_lst.append([a])
             r_lst.append([r])
             s_prime_lst.append(s_prime['obs'])
+            s_p_prime_lst.append(s_prime['flat_paths'])
             done_mask_lst.append([done_mask])
 
-        return torch.tensor(s_lst, dtype=torch.float), torch.tensor(a_lst), \
+        return (torch.tensor(s_lst, dtype=torch.float), torch.tensor(s_p_lst, dtype=torch.float), torch.tensor(a_lst), \
             torch.tensor(r_lst), torch.tensor(s_prime_lst, dtype=torch.float), \
-            torch.tensor(done_mask_lst)
+            torch.tensor(s_p_prime_lst, dtype=torch.float), torch.tensor(done_mask_lst))
 
     def size(self):
         return len(self.buffer)
@@ -49,34 +51,48 @@ class Qnet(nn.Module):
         super(Qnet, self).__init__()
         self.conv1 = nn.Conv2d(2, 16, kernel_size=3, padding=1)
         self.conv2 = nn.Conv2d(16, 32, kernel_size=3, padding=1)
-        self.fc1 = nn.Linear(32 * 14 * 14, 128)
+        self.fc1 = nn.Linear(32 * 14 * 14 + 32, 128)
         self.fc2 = nn.Linear(128, 3)  # output class
 
-    def forward(self, x):
+        self.path_fc1 = nn.Linear(64, 128)
+        self.path_fc2 = nn.Linear(128, 32)
+
+    def forward(self, x, y):
+        # input state['obs']
         x = self.conv1(x)
         x = nn.ReLU()(x)
         x = self.conv2(x)
         x = nn.ReLU()(x)
         x = x.view(x.size(0), -1)  # flatten
-        x = self.fc1(x)
-        x = nn.ReLU()(x)
-        x = self.fc2(x)
-        x = F.softmax(x, dim=1)
 
-        return x
+        y = self.path_fc1(y)
+        y = self.path_fc2(y)
+        y = y.view(-1, y.size(0))  # flatten
+
+        z = torch.cat((x, y), dim=1)
+
+        z = self.fc1(z)
+        z = nn.ReLU()(z)
+        z = self.fc2(z)
+        z = F.softmax(z, dim=1)
+
+        # input state['flat_paths']
+
+        return z
 
     def sample_action(self, state, epsilon):
         try:
             obs = torch.from_numpy(state['obs']).float()
+            obs_path = torch.from_numpy(state['flat_paths']).float()
             # path 구성하기
             # obs_p
-            out = self.forward(obs)
+            out = self.forward(obs, obs_path)
             coin = random.random()
 
             candidate_paths = state['paths']
 
             if coin < epsilon:
-                rand_idx = random.randint(0, 1)
+                rand_idx = random.randint(0, 2)
                 return candidate_paths[rand_idx], rand_idx
             else:
                 return candidate_paths[out.argmax().item()], out.argmax().item()
@@ -86,13 +102,13 @@ class Qnet(nn.Module):
 
 def train(q, q_target, memory, optimizer):
     for i in range(10):
-        s, a, r, s_prime, done_mask = memory.sample(batch_size)
+        s, s_p, a, r, s_prime, s_p_prime, done_mask = memory.sample(batch_size)
         s = s.squeeze(1)    # Reshape: s shape: [32, 1, 2, x, x] --> [32, 2, x, x]
         s_prime = s_prime.squeeze(1)
 
-        q_out = q(s)
+        q_out = q(s, s_p)
         q_a = q_out.gather(1, a)
-        max_q_prime = q_target(s_prime).max(1)[0].unsqueeze(1)
+        max_q_prime = q_target(s_prime, s_p_prime).max(1)[0].unsqueeze(1)
         target = r + gamma * max_q_prime * done_mask
         loss = F.smooth_l1_loss(q_a, target)
 
@@ -109,7 +125,7 @@ def main():
     q_target.load_state_dict(q.state_dict())
     memory = ReplayBuffer()
 
-    max_episode = 1500
+    max_episode = 5000
     print_interval = 20
     score = 0.0
     high_score = 0.0
@@ -117,7 +133,7 @@ def main():
     optimizer = optim.Adam(q.parameters(), lr=learning_rate)
 
     for n_epi in range(max_episode):
-        epsilon = max(0.01, 0.9 - 0.2 * (n_epi / 200))  # Linear annealing from 90% to 1%
+        epsilon = max(0.01, 0.9 - 0.05 * (n_epi / 200))  # Linear annealing from 90% to 1%
         s, _ = env.reset(0, 20)
         done = False
 
@@ -135,11 +151,12 @@ def main():
         if memory.size() > 2000:
             train(q, q_target, memory, optimizer)
 
+        if high_score <= score:
+            high_score = score
+            torch.save(q.state_dict(), "model_save\highest_model_best")
+            print("Best model saved, Score: ", score)
+
         if n_epi % print_interval == 0 and n_epi != 0:
-            if high_score <= score:
-                high_score = score
-                torch.save(q.state_dict(), "model_save\highest_model_best")
-                print("Best model saved")
             q_target.load_state_dict(q.state_dict())
             print("n_episode :{}, score : {:.1f}, n_buffer : {}, eps : {:.1f}%".format(
                 n_epi, score / print_interval, memory.size(), epsilon * 100))
