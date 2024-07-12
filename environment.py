@@ -404,9 +404,14 @@ class QuantumEnvironment:
         subnet = nx.subgraph_view(
             copied_G,
             filter_edge=lambda node_1_id, node_2_id: \
-                True if copied_G.edges[(node_1_id, node_2_id)]['num_key'] >= self.consume_key_size and
-                        copied_G.edges[(node_1_id, node_2_id)]['num_channel'] > 0 else False
+                True if copied_G.edges[(node_1_id, node_2_id)]['num_key'] >= self.consume_key_size else False
         )
+        # subnet = nx.subgraph_view(
+        #     copied_G,
+        #     filter_edge=lambda node_1_id, node_2_id: \
+        #         True if copied_G.edges[(node_1_id, node_2_id)]['num_key'] >= self.consume_key_size and
+        #                 copied_G.edges[(node_1_id, node_2_id)]['num_channel'] > 0 else False
+        # )
         if len(subnet.edges) == 0 or not nx.has_path(subnet, source=self.source_node, target=self.target_node):
             result = False
 
@@ -452,9 +457,14 @@ class QuantumEnvironment:
         subnet = nx.subgraph_view(
             copied_G,
             filter_edge=lambda node_1_id, node_2_id: \
-                True if copied_G.edges[(node_1_id, node_2_id)]['num_key'] >= self.consume_key_size and
-                        copied_G.edges[(node_1_id, node_2_id)]['num_channel'] > 0 else False
+                True if copied_G.edges[(node_1_id, node_2_id)]['num_key'] >= self.consume_key_size else False
         )
+        # subnet = nx.subgraph_view(
+        #     copied_G,
+        #     filter_edge=lambda node_1_id, node_2_id: \
+        #         True if copied_G.edges[(node_1_id, node_2_id)]['num_key'] >= self.consume_key_size and
+        #                 copied_G.edges[(node_1_id, node_2_id)]['num_channel'] > 0 else False
+        # )
         paths = []
         if len(subnet.edges) == 0 or not nx.has_path(subnet, source=self.source_node, target=self.target_node):
             for _ in range(self.k):
