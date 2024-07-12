@@ -7,6 +7,7 @@ std_deviation = 4
 init_qber = np.random.normal(mean_value, std_deviation, size=8)
 init_qber = np.round(np.clip(init_qber, 1, 10))
 init_num_key = np.zeros(8)
+init_num_channel = np.zeros(8)
 init_count_rate = np.random.randint(1, 4, size=8) * 100
 
 simple_topo = {
@@ -23,6 +24,7 @@ simple_topo = {
     'INIT_QBER': init_qber,
     'QBER': init_qber, # [16, 2, 16, 5, 1, 2, 5, 1, 3, 5, 1, 2, 3, 3, 2, 4, 3, 4]
     'num_key': [0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0],
+    'num_channel': init_num_channel,
     'COUNT_RATE': init_count_rate, # [320, 800, 320, 100, 100, 800, 100, 120, 150, 100, 120, 420, 320, 150, 420, 320, 320, 320]
     'NUM_QKD_NODE': 4,
     'NUM_QKD_LINK': 8,
@@ -35,6 +37,8 @@ std_deviation = 4
 init_qber = np.random.normal(mean_value, std_deviation, size=18)
 init_qber = np.round(np.clip(init_qber, 1, 10))
 init_count_rate = np.random.randint(1, 4, size=18) * 100
+init_num_channel = np.zeros(18)
+init_num_key = np.zeros(18)
 
 butterfly_topo = {
     'NAME': "BUTTERFLY",
@@ -51,7 +55,8 @@ butterfly_topo = {
     ],
     'INIT_QBER': init_qber,
     'QBER': init_qber, # [16, 2, 16, 5, 1, 2, 5, 1, 3, 5, 1, 2, 3, 3, 2, 4, 3, 4]
-    'num_key': [0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0],
+    'num_key': init_num_key,
+    'num_channel': init_num_channel,
     'COUNT_RATE': init_count_rate, # [320, 800, 320, 100, 100, 800, 100, 120, 150, 100, 120, 420, 320, 150, 420, 320, 320, 320]
     'NUM_QKD_NODE': 6,
     'NUM_QKD_LINK': 9,
@@ -63,6 +68,7 @@ std_deviation = 4
 init_qber = np.random.normal(mean_value, std_deviation, size=34)
 init_qber = np.round(np.clip(init_qber, 1, 10))
 init_num_key = np.zeros(34)
+init_num_channel = np.zeros(34)
 init_count_rate = np.random.randint(1, 4, size=34) * 100
 
 kreonet_topo = {
@@ -93,6 +99,7 @@ kreonet_topo = {
     'INIT_QBER': init_qber,
     'QBER': init_qber, # [16, 2, 16, 5, 1, 2, 5, 1, 3, 5, 1, 2, 3, 3, 2, 4, 3, 4]
     'num_key': init_num_key,
+    'num_channel': init_num_channel,
     'COUNT_RATE': init_count_rate, # [320, 800, 320, 100, 100, 800, 100, 120, 150, 100, 120, 420, 320, 150, 420, 320, 320, 320]
     'NUM_QKD_NODE': 18,
     'NUM_QKD_LINK': 17,
@@ -104,6 +111,7 @@ std_deviation = 4
 init_qber = np.random.normal(mean_value, std_deviation, size=44)
 init_qber = np.round(np.clip(init_qber, 1, 10))
 init_num_key = np.zeros(44)
+init_num_channel = np.zeros(44)
 init_count_rate = np.random.randint(1, 4, size=44) * 100
 
 nsfnet_topo = {
@@ -131,6 +139,7 @@ nsfnet_topo = {
     'INIT_QBER': init_qber,
     'QBER': init_qber,  # [16, 2, 16, 5, 1, 2, 5, 1, 3, 5, 1, 2, 3, 3, 2, 4, 3, 4]
     'num_key': init_num_key,
+    'num_channel': init_num_channel,
     'COUNT_RATE': init_count_rate,  # [320, 800, 320, 100, 100, 800, 100, 120, 150, 100, 120, 420, 320, 150, 420, 320, 320, 320]
 }
 
@@ -141,6 +150,7 @@ std_deviation = 4
 init_qber = np.random.normal(mean_value, std_deviation, size=82)
 init_qber = np.round(np.clip(init_qber, 1, 10))
 init_num_key = np.zeros(82)
+init_num_channel = np.zeros(82)
 init_count_rate = np.random.randint(1, 4, size=82) * 100
 
 cost266_topo = {
@@ -182,5 +192,6 @@ cost266_topo = {
     'INIT_QBER': init_qber,
     'QBER': init_qber,  # [16, 2, 16, 5, 1, 2, 5, 1, 3, 5, 1, 2, 3, 3, 2, 4, 3, 4]
     'num_key': init_num_key,
+    'num_channel': init_num_channel,
     'COUNT_RATE': init_count_rate,  # [320, 800, 320, 100, 100, 800, 100, 120, 150, 100, 120, 420, 320, 150, 420, 320, 320, 320]
 }

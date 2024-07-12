@@ -14,7 +14,7 @@ from environment import QuantumEnvironment
 learning_rate = 0.0005
 gamma = 0.97
 buffer_limit = 5000
-batch_size = 32
+batch_size = 64
 
 
 class ReplayBuffer():
@@ -51,11 +51,12 @@ class Qnet(nn.Module):
         super(Qnet, self).__init__()
         self.conv1 = nn.Conv2d(2, 16, kernel_size=3, padding=1)
         self.conv2 = nn.Conv2d(16, 32, kernel_size=3, padding=1)
-        self.fc1 = nn.Linear(32 * 14 * 14 + 32, 128)
-        self.fc2 = nn.Linear(128, 3)  # output class
 
         self.path_fc1 = nn.Linear(64, 128)
         self.path_fc2 = nn.Linear(128, 32)
+
+        self.fc1 = nn.Linear(32 * 28 * 28 + 32, 128)
+        self.fc2 = nn.Linear(128, 3)  # output class
 
     def forward(self, x, y):
         # input state['obs']
@@ -65,18 +66,17 @@ class Qnet(nn.Module):
         x = nn.ReLU()(x)
         x = x.view(x.size(0), -1)  # flatten
 
+        # input state['flat_paths']
         y = self.path_fc1(y)
         y = self.path_fc2(y)
-        y = y.view(-1, y.size(0))  # flatten
+        y = y.view(y.size(0), -1)  # flatten
 
-        z = torch.cat((x, y), dim=1)
+        z = torch.cat((x, y), dim=1)  # Concatenate cnn and fc results
 
         z = self.fc1(z)
         z = nn.ReLU()(z)
         z = self.fc2(z)
         z = F.softmax(z, dim=1)
-
-        # input state['flat_paths']
 
         return z
 
@@ -119,7 +119,7 @@ def train(q, q_target, memory, optimizer):
 
 def main():
     # env = gym.make('CartPole-v1')
-    env = QuantumEnvironment(topology_type='NSFNET')
+    env = QuantumEnvironment(topology_type='COST266')
     q = Qnet()
     q_target = Qnet()
     q_target.load_state_dict(q.state_dict())
@@ -153,7 +153,7 @@ def main():
 
         if high_score <= score:
             high_score = score
-            torch.save(q.state_dict(), "model_save\highest_model_best")
+            torch.save(q.state_dict(), "model_save\cost266_highest_model_best")
             print("Best model saved, Score: ", score)
 
         if n_epi % print_interval == 0 and n_epi != 0:
@@ -165,7 +165,7 @@ def main():
         score = 0.0
 
         if n_epi == max_episode - 1:
-            torch.save(q.state_dict(), "model_save\highest_model_final")
+            torch.save(q.state_dict(), "model_save\cost266_highest_model_final")
             print("Final model saved")
             # Generate training result graph
             plt.plot(scores, linestyle='-')

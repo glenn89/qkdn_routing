@@ -28,12 +28,15 @@ class QuantumEnvironment:
         self.consume_std_dev = 0
         self.num_request = 0
         self.init_qber = None
+        self.init_num_channel = None
         self.key_pool_size = 0
         self.Key_pool = None
         self.key_life_time = 0
         self.time_step = 0
         self.source_node = None
         self.target_node = None
+        self.service_duration_time = None
+        self.service_routing_path = None
 
         self.session_blocking = 0
         self.total_generation_keys = 0
@@ -70,7 +73,8 @@ class QuantumEnvironment:
                 "count_rate": self.topology_conf['COUNT_RATE'][n],
                 "init_qber": self.topology_conf['INIT_QBER'][n],
                 "qber": self.topology_conf['QBER'][n],
-                "num_key": self.topology_conf['num_key'][n]
+                "num_key": self.topology_conf['num_key'][n],
+                "num_channel": self.topology_conf['num_channel'][n]
             } for n in range(len(edges))
         }
         nx.set_edge_attributes(self.G, edges_attribute)
@@ -188,6 +192,7 @@ class QuantumEnvironment:
         self.generate_key_time_slot = 15
         self.generate_key_size = 2
         # self.generate_key_size = np.random.pareto(1, 1).astype(int)[0] * 20
+        self.init_num_channel = 3
         self.consume_key_size = 1
         self.consume_mean = 1
         self.consume_std_dev = 2
@@ -195,6 +200,8 @@ class QuantumEnvironment:
         self.key_life_time = 20
         self.key_pool_size = 100_000
         self.key_pool = {}
+        self.service_duration_time = []
+        self.service_routing_path = []
 
         self.time_step = 0
         self.session_blocking = 0
@@ -213,6 +220,7 @@ class QuantumEnvironment:
         self.cumulative_edge_keys = {}
         for edge in self.G.edges:
             self.cumulative_edge_keys[edge] = []
+            self.G[edge[0]][edge[1]]['num_channel'] = self.init_num_channel
 
         # self.calculate_based_lifetime_weight(self.G)
         self.calculate_based_num_key_weight(self.G)
@@ -296,6 +304,9 @@ class QuantumEnvironment:
                 # print("Time step: ", self.time_step, "Blocking reason: ", self.G.edges(data=True))
                 self.session_blocking -= 1
             else:
+                self.service_duration_time.append(5)
+                self.service_routing_path.append(routing_path)
+
                 self.apply_routing_path(routing_path)
                 # print("Find the routing path")
                 self.reward += 1
@@ -366,6 +377,7 @@ class QuantumEnvironment:
         # Transform np.array
         state['obs'] = np.array(state['obs'])
         state['flat_paths'] = np.array(state['flat_paths'])
+        state['flat_paths'] = state['flat_paths'][np.newaxis, :]
 
         return state
 
@@ -392,7 +404,8 @@ class QuantumEnvironment:
         subnet = nx.subgraph_view(
             copied_G,
             filter_edge=lambda node_1_id, node_2_id: \
-                True if copied_G.edges[(node_1_id, node_2_id)]['num_key'] >= self.consume_key_size else False
+                True if copied_G.edges[(node_1_id, node_2_id)]['num_key'] >= self.consume_key_size and
+                        copied_G.edges[(node_1_id, node_2_id)]['num_channel'] > 0 else False
         )
         if len(subnet.edges) == 0 or not nx.has_path(subnet, source=self.source_node, target=self.target_node):
             result = False
@@ -439,7 +452,8 @@ class QuantumEnvironment:
         subnet = nx.subgraph_view(
             copied_G,
             filter_edge=lambda node_1_id, node_2_id: \
-                True if copied_G.edges[(node_1_id, node_2_id)]['num_key'] >= self.consume_key_size else False
+                True if copied_G.edges[(node_1_id, node_2_id)]['num_key'] >= self.consume_key_size and
+                        copied_G.edges[(node_1_id, node_2_id)]['num_channel'] > 0 else False
         )
         paths = []
         if len(subnet.edges) == 0 or not nx.has_path(subnet, source=self.source_node, target=self.target_node):
@@ -632,10 +646,12 @@ class QuantumEnvironment:
             try:
                 if routing_path[i] < routing_path[i+1]:
                     self.G[routing_path[i]][routing_path[i+1]]['num_key'] -= self.consume_key_size
-                    self.key_pool[(routing_path[i], routing_path[i + 1])] = self.key_pool[(routing_path[i], routing_path[i + 1])][self.consume_key_size:]
+                    self.G[routing_path[i]][routing_path[i+1]]['num_channel'] -= 1
+                    self.key_pool[(routing_path[i], routing_path[i + 1])] = self.key_pool[(routing_path[i], routing_path[i+1])][self.consume_key_size:]
                 else:
                     self.G[routing_path[i+1]][routing_path[i]]['num_key'] -= self.consume_key_size
-                    self.key_pool[(routing_path[i + 1], routing_path[i])] = self.key_pool[(routing_path[i + 1], routing_path[i])][self.consume_key_size:]
+                    self.G[routing_path[i+1]][routing_path[i]]['num_key'] -= 1
+                    self.key_pool[(routing_path[i+1], routing_path[i])] = self.key_pool[(routing_path[i+1], routing_path[i])][self.consume_key_size:]
             except:
                 print(routing_path)
 
@@ -729,7 +745,7 @@ class QuantumEnvironment:
 
 
 if __name__ == "__main__":
-    env = QuantumEnvironment(topology_type='NSFNET')
+    env = QuantumEnvironment(topology_type='COST266')
     max_time_step = 20    # 1_000
     num_simulation = 1
     seed = 0
@@ -755,13 +771,11 @@ if __name__ == "__main__":
         shortest_average_total_generation_keys += info['total_generation_keys']
         shortest_average_remaining_keys += info['remaining_keys']
         shortest_average_used_keys += info['used_keys']
-        seed += 1
     shortest_average_reward /= num_simulation
     shortest_average_session_blocking /= num_simulation
     shortest_average_total_generation_keys /= num_simulation
     shortest_average_remaining_keys /= num_simulation
     shortest_average_used_keys /= num_simulation
-    seed = 0
     # env.plot_topology()
     # env.plot_heatmap()
 
@@ -778,13 +792,11 @@ if __name__ == "__main__":
         weighted_shortest_average_total_generation_keys += info['total_generation_keys']
         weighted_shortest_average_remaining_keys += info['remaining_keys']
         weighted_shortest_average_used_keys += info['used_keys']
-        seed += 1
     weighted_shortest_average_reward /= num_simulation
     weighted_shortest_average_session_blocking /= num_simulation
     weighted_shortest_average_total_generation_keys /= num_simulation
     weighted_shortest_average_remaining_keys /= num_simulation
     weighted_shortest_average_used_keys /= num_simulation
-    seed = 0
     # env.plot_topology()
     # env.plot_heatmap()
 
@@ -801,13 +813,11 @@ if __name__ == "__main__":
         qber_average_total_generation_keys += info['total_generation_keys']
         qber_average_remaining_keys += info['remaining_keys']
         qber_average_used_keys += info['used_keys']
-        seed += 1
     qber_average_reward /= num_simulation
     qber_average_session_blocking /= num_simulation
     qber_average_total_generation_keys /= num_simulation
     qber_average_remaining_keys /= num_simulation
     qber_average_used_keys /= num_simulation
-    seed = 0
     # # env.plot_topology()
     # # env.plot_heatmap()
     #

@@ -15,7 +15,7 @@ class Qnet(nn.Module):
         super(Qnet, self).__init__()
         self.conv1 = nn.Conv2d(2, 16, kernel_size=3, padding=1)
         self.conv2 = nn.Conv2d(16, 32, kernel_size=3, padding=1)
-        self.fc1 = nn.Linear(32 * 14 * 14 + 32, 128)
+        self.fc1 = nn.Linear(32 * 28 * 28 + 32, 128)
         self.fc2 = nn.Linear(128, 3)  # output class
 
         self.path_fc1 = nn.Linear(64, 128)
@@ -29,18 +29,17 @@ class Qnet(nn.Module):
         x = nn.ReLU()(x)
         x = x.view(x.size(0), -1)  # flatten
 
+        # input state['flat_paths']
         y = self.path_fc1(y)
         y = self.path_fc2(y)
-        y = y.view(-1, y.size(0))  # flatten
+        y = y.view(y.size(0), -1)  # flatten
 
-        z = torch.cat((x, y), dim=1)
+        z = torch.cat((x, y), dim=1)  # Concatenate cnn and fc results
 
         z = self.fc1(z)
         z = nn.ReLU()(z)
         z = self.fc2(z)
         z = F.softmax(z, dim=1)
-
-        # input state['flat_paths']
 
         return z
 
@@ -66,9 +65,12 @@ class Qnet(nn.Module):
 
 def main():
     # env = gym.make('CartPole-v1')
-    env = QuantumEnvironment(topology_type='NSFNET')
+    env = QuantumEnvironment(topology_type='COST266')
     q = Qnet()
-    q.load_state_dict(torch.load('model_save\highest_model_best'), strict=False)
+    q.load_state_dict(torch.load('model_save\cost266_highest_model_final'), strict=False)
+
+    (shortest_reward, shortest_average_reward, shortest_average_session_blocking,
+     shortest_average_total_generation_keys, shortest_average_remaining_keys, shortest_average_used_keys) = 0, 0, 0, 0, 0, 0
 
     for n_epi in range(1):
         epsilon = 0.0  # Linear annealing from 8% to 1%
@@ -85,14 +87,27 @@ def main():
             s = s_prime
 
             score = r
+            shortest_average_reward = r
+            shortest_average_session_blocking = info['session_blocking']
+            shortest_average_total_generation_keys = info['total_generation_keys']
+            shortest_average_remaining_keys = info['remaining_keys']
+            shortest_average_used_keys = info['used_keys']
+            print("time step :{}, score : {:.1f}, action_index: {}, action: {}".format(time_step, score, out, a))
+            print()
+
             time_step += 1
             if done:
                 break
 
-            print("time step :{}, score : {:.1f}, action_index: {}, action: {}".format(time_step, score, out, a))
-            print()
         score = 0.0
     # env.close()
+    print("Simulation information")
+    print()
+    print("Average Results:")
+    print(
+        f"{'Metric':<20}{'Success':<10}{'Session Blocking':<20}{'Total generation keys':<25}{'Used keys':<20}{'Used percentage':<10}")
+    print(
+        f"{'RL-based':<20}{shortest_average_reward:<10}{shortest_average_session_blocking:<20}{shortest_average_total_generation_keys:<25}{shortest_average_used_keys:<20}{(shortest_average_used_keys / shortest_average_total_generation_keys) * 100:<4.2f}%")
 
 
 if __name__ == '__main__':
