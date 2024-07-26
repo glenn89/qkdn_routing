@@ -6,6 +6,7 @@ import torch
 import torch.nn as nn
 import torch.nn.functional as F
 import torch.optim as optim
+import wandb
 
 from environment import QuantumEnvironment
 
@@ -67,23 +68,21 @@ def main():
     # env = gym.make('CartPole-v1')
     env = QuantumEnvironment(topology_type='COST266')
     q = Qnet()
-    q.load_state_dict(torch.load('model_save\cost266_highest_model_final'), strict=False)
+    q.load_state_dict(torch.load('model_save\cost266_highest_model_best'), strict=False)
 
     (shortest_reward, shortest_average_reward, shortest_average_session_blocking,
      shortest_average_total_generation_keys, shortest_average_remaining_keys, shortest_average_used_keys) = 0, 0, 0, 0, 0, 0
 
     for n_epi in range(1):
         epsilon = 0.0  # Linear annealing from 8% to 1%
-        s, _ = env.reset(0, 20)
+        s, _ = env.reset(0, 20, True)
         done = False
         time_step = 0
 
         while not done:
             a, out = q.sample_action(s, epsilon)
             s_prime, r, done, truncated, info = env.step(a)
-            done_mask = 0.0 if done else 1.0
-            if not done:
-                print("candidate routing paths: ", s['paths'])
+            print("candidate routing paths: ", s['paths'])
             s = s_prime
 
             score = r

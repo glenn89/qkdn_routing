@@ -2,6 +2,8 @@ import collections
 import random
 import networkx as nx
 import matplotlib.pyplot as plt
+import numpy as np
+import wandb
 
 import torch
 import torch.nn as nn
@@ -13,9 +15,11 @@ from environment import QuantumEnvironment
 # Hyperparameters
 learning_rate = 0.0005
 gamma = 0.97
-buffer_limit = 5000
-batch_size = 64
+buffer_limit = 10000
+batch_size = 128
 
+# Wandb config
+# wandb.init(project="QKD_rl_routing")
 
 class ReplayBuffer():
     def __init__(self):
@@ -101,6 +105,7 @@ class Qnet(nn.Module):
 
 
 def train(q, q_target, memory, optimizer):
+    loss_lst = []
     for i in range(10):
         s, s_p, a, r, s_prime, s_p_prime, done_mask = memory.sample(batch_size)
         s = s.squeeze(1)    # Reshape: s shape: [32, 1, 2, x, x] --> [32, 2, x, x]
@@ -116,6 +121,8 @@ def train(q, q_target, memory, optimizer):
         loss.backward()
         optimizer.step()
 
+        loss_lst.append(loss.detach().numpy())
+    return np.mean(loss_lst)
 
 def main():
     # env = gym.make('CartPole-v1')
@@ -125,16 +132,21 @@ def main():
     q_target.load_state_dict(q.state_dict())
     memory = ReplayBuffer()
 
-    max_episode = 5000
+    max_episode = 18000
     print_interval = 20
     score = 0.0
+    loss = 0.0
+    reward = 0.0
+    rewards = []
     high_score = 0.0
     scores = []
+    losses = []
+    avg_losses = []
     optimizer = optim.Adam(q.parameters(), lr=learning_rate)
 
     for n_epi in range(max_episode):
-        epsilon = max(0.01, 0.9 - 0.05 * (n_epi / 200))  # Linear annealing from 90% to 1%
-        s, _ = env.reset(0, 20)
+        epsilon = max(0.01, 0.9 - 0.0125 * (n_epi / 200))  # Linear annealing from 90% to 1%
+        s, _ = env.reset(0, 20, True)
         done = False
 
         while not done:
@@ -144,35 +156,44 @@ def main():
             memory.put((s, out, r / 100.0, s_prime, done_mask))
             s = s_prime
 
-            score += r
             if done:
+                score += r
                 break
 
         if memory.size() > 2000:
-            train(q, q_target, memory, optimizer)
+            loss = train(q, q_target, memory, optimizer)
+        losses.append(loss)
+        avg_losses.append(sum(losses[-print_interval:]) / print_interval)
 
         if high_score <= score:
             high_score = score
-            torch.save(q.state_dict(), "model_save\cost266_highest_model_best")
+            torch.save(q.state_dict(), "model_save\cost266_highest_model_final")
             print("Best model saved, Score: ", score)
 
         if n_epi % print_interval == 0 and n_epi != 0:
             q_target.load_state_dict(q.state_dict())
-            print("n_episode :{}, score : {:.1f}, n_buffer : {}, eps : {:.1f}%".format(
-                n_epi, score / print_interval, memory.size(), epsilon * 100))
+            print("n_episode :{}, score : {:.1f}, loss : {:.5f}, n_buffer : {}, eps : {:.1f}%".format(
+                n_epi, score, loss, memory.size(), epsilon * 100))
 
         scores.append(score)
+        rewards.append(sum(scores[-print_interval:]) / print_interval)
         score = 0.0
 
         if n_epi == max_episode - 1:
             torch.save(q.state_dict(), "model_save\cost266_highest_model_final")
             print("Final model saved")
             # Generate training result graph
-            plt.plot(scores, linestyle='-')
-            plt.xlabel('Episode')
-            plt.ylabel('Training Reward')
-            plt.title('Training results')
-            plt.grid(True)
+            fig, ax1 = plt.subplots()
+            ax1.plot(scores, linestyle='-')
+            ax1.plot(rewards, linestyle='-')
+            ax1.set_xlabel('Episode')
+            ax1.set_ylabel('Training Reward')
+            ax1.set_title('Training results')
+            ax1.grid(True)
+
+            ax2 = ax1.twinx()
+            ax2.plot(avg_losses, linestyle='-', color='red')
+            ax2.set_ylabel('Loss')
             plt.show()
 
     # env.close()

@@ -20,6 +20,7 @@ class QuantumEnvironment:
         self.metric_type = 'qber'   # type: 'simple_shortest', 'weighted_shortest', 'qber', 'num_key', 'combination'
         self.num_seed = 0
         self.max_time_step = 0
+        self.training = None
 
         self.generate_key_size = 0
         self.generate_key_time_slot = 0
@@ -184,10 +185,11 @@ class QuantumEnvironment:
         plt.title('Sophisticated Network with Red Link Strength Heatmap')
         plt.show()
 
-    def reset(self, seed, max_time_step):
+    def reset(self, seed, max_time_step, training):
         self.num_seed = seed
         np.random.seed(self.num_seed)
         self.max_time_step = max_time_step
+        self.training = training
 
         self.generate_key_time_slot = 15
         self.generate_key_size = 2
@@ -271,7 +273,7 @@ class QuantumEnvironment:
         #         self.cumulative_edge_keys[edge].pop(0)
         #         self.cumulative_edge_keys[edge].append(self.G[edge[0]][edge[1]]['num_key'])
 
-        if len(action) == 0:
+        if not self.training:
             for _ in range(self.num_request):
                 routing_path = self.find_routing_path()
                 # if self.metric_type == 'num_key':
@@ -357,8 +359,16 @@ class QuantumEnvironment:
         state = {}
         # Configurate state
         adj_matrix_np = nx.to_numpy_array(self.G, weight=None)
+        # Normalization
+        adj_min, adj_max = adj_matrix_np.min(), adj_matrix_np.max()
+        normalized_adj = (adj_matrix_np - adj_min) / (adj_max - adj_min)
+
         weight_matrix_np = nx.to_numpy_array(self.G, weight='num_key')
-        state['obs'] = np.stack([adj_matrix_np, weight_matrix_np], axis=0)  # staked (2, H, W)
+        # Normalization
+        weight_min, weight_max = weight_matrix_np.min(), weight_matrix_np.max()
+        normalized_weight = (weight_matrix_np - weight_min) / (weight_max - weight_min)
+
+        state['obs'] = np.stack([normalized_adj, normalized_weight], axis=0)  # staked (2, H, W)
         state['obs'] = state['obs'][np.newaxis, :]  # shape convert (1, 2, H, W)
 
         state['paths'] = self.find_k_shortest_path()
@@ -372,7 +382,12 @@ class QuantumEnvironment:
         flattened_paths = [node for path in state['paths'] for node in path]
         paths_info.extend(flattened_paths)
         paths_info = paths_info + [0] * (64 - len(paths_info))
-        state['flat_paths'] = paths_info
+
+        # Normalization
+        paths_info = np.array(paths_info)
+        paths_min, paths_max = paths_info.min(), paths_info.max()
+        normalized_paths = (paths_info - paths_min) / (paths_max - paths_min)
+        state['flat_paths'] = normalized_paths
 
         # Transform np.array
         state['obs'] = np.array(state['obs'])
@@ -400,6 +415,8 @@ class QuantumEnvironment:
 
     def check_routing_path(self, routing_path):
         result = True
+        if len(routing_path) == 0:
+            return False
         copied_G = copy.deepcopy(self.G)
         subnet = nx.subgraph_view(
             copied_G,
@@ -413,7 +430,7 @@ class QuantumEnvironment:
         #                 copied_G.edges[(node_1_id, node_2_id)]['num_channel'] > 0 else False
         # )
         if len(subnet.edges) == 0 or not nx.has_path(subnet, source=self.source_node, target=self.target_node):
-            result = False
+            return False
 
         for i in range(len(routing_path) - 1):
             if routing_path[i] < routing_path[i+1]:
@@ -475,12 +492,12 @@ class QuantumEnvironment:
         # routing_path = nx.shortest_path(subnet, 0, 5)
         for edge in subnet.edges:
             subnet[edge[0]][edge[1]]['weight'] = 1 / subnet[edge[0]][edge[1]]['num_key']
-        paths = list(nx.shortest_simple_paths(subnet, self.source_node, self.target_node, 'weight'))
+        # paths = list(nx.shortest_simple_paths(subnet, self.source_node, self.target_node, 'weight'))
+        paths = list(nx.all_shortest_paths(subnet, self.source_node, self.target_node, 'weight'))
 
         if len(paths) < self.k:
             for _ in range(self.k - len(paths)):
                 paths.append([])
-
         routing_path = paths[:self.k]
 
         return routing_path
@@ -770,10 +787,10 @@ if __name__ == "__main__":
 
     # Shortest path simulation
     env.metric_type = 'simple_shortest'
-    env.reset(seed=seed, max_time_step=max_time_step)
+    env.reset(seed=seed, max_time_step=max_time_step, training=False)
     # env.plot_topology()
     for _ in range(num_simulation):
-        env.reset(seed=seed, max_time_step=max_time_step)
+        env.reset(seed=seed, max_time_step=max_time_step, training=False)
         for _ in range(max_time_step):
             _, shortest_reward, _, _, info = env.step(action)
         shortest_average_reward += shortest_reward
@@ -791,10 +808,10 @@ if __name__ == "__main__":
 
     # Weighted shortest path simulation
     env.metric_type = 'weighted_shortest'
-    s, _ = env.reset(seed=seed, max_time_step=max_time_step)
+    s, _ = env.reset(seed=seed, max_time_step=max_time_step, training=False)
     # env.plot_topology()https://ecconf.webex.com/ecconf/j.php?MTID=m73d0035bfb13fb2090b444ee3602aa35
     for _ in range(num_simulation):
-        s, _ = env.reset(seed=seed, max_time_step=max_time_step)
+        s, _ = env.reset(seed=seed, max_time_step=max_time_step, training=False)
         for _ in range(max_time_step):
             _, weighted_shortest_reward, _, _, info = env.step(action)
         weighted_shortest_average_reward += weighted_shortest_reward
@@ -812,10 +829,10 @@ if __name__ == "__main__":
 
     # QBER simulation
     env.metric_type = 'weighted_life_shortest'
-    s, _ = env.reset(seed=seed, max_time_step=max_time_step)
+    s, _ = env.reset(seed=seed, max_time_step=max_time_step, training=False)
     # env.plot_topology()
     for _ in range(num_simulation):
-        s, _ = env.reset(seed=seed, max_time_step=max_time_step)
+        s, _ = env.reset(seed=seed, max_time_step=max_time_step, training=False)
         for _ in range(max_time_step):
             _, qber_reward, _, _, info = env.step(action)
         qber_average_reward += qber_reward
@@ -833,9 +850,9 @@ if __name__ == "__main__":
     #
     # # Num keys simulation
     # env.metric_type = 'num_key'
-    # env.reset(seed=seed, max_time_step=max_time_step)
+    # env.reset(seed=seed, max_time_step=max_time_step, training=False)
     # for _ in range(num_simulation):
-    #     env.reset(seed=seed, max_time_step=max_time_step)
+    #     env.reset(seed=seed, max_time_step=max_time_step, training=False)
     #     for _ in range(max_time_step):
     #         num_key_reward, info = env.step()
     #     num_key_average_reward += num_key_reward
@@ -855,9 +872,9 @@ if __name__ == "__main__":
     #
     # # QBER + Num keys simulation
     # env.metric_type = 'combination'
-    # env.reset(seed=seed, max_time_step=max_time_step)
+    # env.reset(seed=seed, max_time_step=max_time_step, training=False)
     # for _ in range(num_simulation):
-    #     env.reset(seed=seed, max_time_step=max_time_step)
+    #     env.reset(seed=seed, max_time_step=max_time_step, training=False)
     #     for _ in range(max_time_step):
     #         combination_reward, info = env.step()
     #     combination_average_reward += combination_reward
