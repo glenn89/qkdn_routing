@@ -65,17 +65,18 @@ class Qnet(nn.Module):
 
 
 def main():
+    seed = 0
     # env = gym.make('CartPole-v1')
     env = QuantumEnvironment(topology_type='COST266')
     q = Qnet()
-    q.load_state_dict(torch.load('model_save\cost266_highest_model_best'), strict=False)
+    q.load_state_dict(torch.load('model_save\cost266_highest_model_final'), strict=False)
 
     (shortest_reward, shortest_average_reward, shortest_average_session_blocking,
      shortest_average_total_generation_keys, shortest_average_remaining_keys, shortest_average_used_keys) = 0, 0, 0, 0, 0, 0
 
     for n_epi in range(1):
         epsilon = 0.0  # Linear annealing from 8% to 1%
-        s, _ = env.reset(0, 20, True)
+        s, _ = env.reset(seed, 20, True)
         done = False
         time_step = 0
 

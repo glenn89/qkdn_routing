@@ -15,8 +15,8 @@ from environment import QuantumEnvironment
 # Hyperparameters
 learning_rate = 0.0005
 gamma = 0.97
-buffer_limit = 10000
-batch_size = 128
+buffer_limit = 2000
+batch_size = 10
 
 # Wandb config
 # wandb.init(project="QKD_rl_routing")
@@ -32,18 +32,22 @@ class ReplayBuffer():
         mini_batch = random.sample(self.buffer, n)
         s_lst, s_p_lst, a_lst, r_lst, s_prime_lst, s_p_prime_lst, done_mask_lst = [], [], [], [], [], [], []
 
-        for transition in mini_batch:
-            s, a, r, s_prime, done_mask = transition
-            s_lst.append(s['obs'])
-            s_p_lst.append(s['flat_paths'])
-            a_lst.append([a])
-            r_lst.append([r])
-            s_prime_lst.append(s_prime['obs'])
-            s_p_prime_lst.append(s_prime['flat_paths'])
-            done_mask_lst.append([done_mask])
+        for episode in mini_batch:
+            for transition in episode:
+                s, a, r, s_prime, done_mask = transition
+                s_lst.append(s['obs'])
+                s_p_lst.append(s['flat_paths'])
+                a_lst.append([a])
+                r_lst.append([r])
+                s_prime_lst.append(s_prime['obs'])
+                s_p_prime_lst.append(s_prime['flat_paths'])
+                done_mask_lst.append([done_mask])
 
-        return (torch.tensor(s_lst, dtype=torch.float), torch.tensor(s_p_lst, dtype=torch.float), torch.tensor(a_lst), \
-            torch.tensor(r_lst), torch.tensor(s_prime_lst, dtype=torch.float), \
+        s_lst, s_p_lst, a_lst, r_lst, s_prime_lst, s_p_prime_lst, done_mask_lst = np.array(s_lst), np.array(s_p_lst), \
+        np.array(a_lst), np.array(r_lst), np.array(s_prime_lst), np.array(s_p_prime_lst), np.array(done_mask_lst)
+
+        return (torch.tensor(s_lst, dtype=torch.float), torch.tensor(s_p_lst, dtype=torch.float), \
+            torch.tensor(a_lst, dtype=torch.long), torch.tensor(r_lst), torch.tensor(s_prime_lst, dtype=torch.float), \
             torch.tensor(s_p_prime_lst, dtype=torch.float), torch.tensor(done_mask_lst))
 
     def size(self):
@@ -106,7 +110,7 @@ class Qnet(nn.Module):
 
 def train(q, q_target, memory, optimizer):
     loss_lst = []
-    for i in range(10):
+    for i in range(1):
         s, s_p, a, r, s_prime, s_p_prime, done_mask = memory.sample(batch_size)
         s = s.squeeze(1)    # Reshape: s shape: [32, 1, 2, x, x] --> [32, 2, x, x]
         s_prime = s_prime.squeeze(1)
@@ -122,7 +126,25 @@ def train(q, q_target, memory, optimizer):
         optimizer.step()
 
         loss_lst.append(loss.detach().numpy())
+
     return np.mean(loss_lst)
+
+def validation(env, q, max_time_step):
+    epsilon = 0.0  # Linear annealing from 8% to 1%
+    score = 0.0
+    s, _ = env.reset(0, max_time_step, True)
+    done = False
+
+    while not done:
+        a, out = q.sample_action(s, epsilon)
+        s_prime, r, done, truncated, info = env.step(a)
+        s = s_prime
+
+        if done:
+            score = r
+            break
+
+    return score
 
 def main():
     # env = gym.make('CartPole-v1')
@@ -131,10 +153,13 @@ def main():
     q_target = Qnet()
     q_target.load_state_dict(q.state_dict())
     memory = ReplayBuffer()
+    episode_memory = []
 
-    max_episode = 18000
+    max_episode = 10000
+    max_time_step = 20
     print_interval = 20
     score = 0.0
+    temp_score = 0.0
     loss = 0.0
     reward = 0.0
     rewards = []
@@ -145,30 +170,35 @@ def main():
     optimizer = optim.Adam(q.parameters(), lr=learning_rate)
 
     for n_epi in range(max_episode):
-        epsilon = max(0.01, 0.9 - 0.0125 * (n_epi / 200))  # Linear annealing from 90% to 1%
-        s, _ = env.reset(0, 20, True)
+        epsilon = max(0.01, 0.9 - 0.025 * (n_epi / 200))  # Linear annealing from 90% to 1%
+        s, _ = env.reset(0, max_time_step, True)
         done = False
 
         while not done:
             a, out = q.sample_action(s, epsilon)
             s_prime, r, done, truncated, info = env.step(a)
             done_mask = 0.0 if done else 1.0
-            memory.put((s, out, r / 100.0, s_prime, done_mask))
+            transition = (s, out, r, s_prime, done_mask)
+            episode_memory.append(transition)
             s = s_prime
 
             if done:
+                memory.put(episode_memory)
                 score += r
+                episode_memory = []
                 break
 
-        if memory.size() > 2000:
+        if memory.size() > 200:
             loss = train(q, q_target, memory, optimizer)
         losses.append(loss)
         avg_losses.append(sum(losses[-print_interval:]) / print_interval)
 
+        # temp_score = validation(env, q, max_time_step)
+        score
         if high_score <= score:
             high_score = score
             torch.save(q.state_dict(), "model_save\cost266_highest_model_final")
-            print("Best model saved, Score: ", score)
+            print("Best model saved, score: ", score)
 
         if n_epi % print_interval == 0 and n_epi != 0:
             q_target.load_state_dict(q.state_dict())

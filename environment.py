@@ -244,10 +244,10 @@ class QuantumEnvironment:
         next_state = {}
         if self.topology_conf['NAME'] == 'SIMPLE':
             self.source_node, self.target_node = 0, 3
-        else:
-            if len(action) == 0:
+        # else:
+        #     if len(action) == 0:
                 # self.source_node, self.target_node = random.sample(range(0, self.topology_conf['NUM_QKD_NODE']), 2)
-                self.source_node, self.target_node = np.random.choice(np.arange(0, self.topology_conf['NUM_QKD_NODE']), size=2, replace=False)
+                # self.source_node, self.target_node = np.random.choice(np.arange(0, self.topology_conf['NUM_QKD_NODE']), size=2, replace=False)
                 # self.source_node, self.target_node = 0, self.topology_conf['NUM_QKD_NODE'] - 1
 
         # self.consume_key_size = max(int(np.random.normal(self.consume_mean, self.consume_std_dev)), 1)
@@ -359,16 +359,16 @@ class QuantumEnvironment:
         state = {}
         # Configurate state
         adj_matrix_np = nx.to_numpy_array(self.G, weight=None)
-        # Normalization
-        adj_min, adj_max = adj_matrix_np.min(), adj_matrix_np.max()
-        normalized_adj = (adj_matrix_np - adj_min) / (adj_max - adj_min)
+        # Normalization adj matrix
+        # adj_min, adj_max = adj_matrix_np.min(), adj_matrix_np.max()
+        # adj_matrix_np = (adj_matrix_np - adj_min) / (adj_max - adj_min)
 
         weight_matrix_np = nx.to_numpy_array(self.G, weight='num_key')
-        # Normalization
-        weight_min, weight_max = weight_matrix_np.min(), weight_matrix_np.max()
-        normalized_weight = (weight_matrix_np - weight_min) / (weight_max - weight_min)
+        # Normalization weight matrix
+        # weight_min, weight_max = weight_matrix_np.min(), weight_matrix_np.max()
+        # weight_matrix_np = (weight_matrix_np - weight_min) / (weight_max - weight_min)
 
-        state['obs'] = np.stack([normalized_adj, normalized_weight], axis=0)  # staked (2, H, W)
+        state['obs'] = np.stack([adj_matrix_np, weight_matrix_np], axis=0)  # staked (2, H, W)
         state['obs'] = state['obs'][np.newaxis, :]  # shape convert (1, 2, H, W)
 
         state['paths'] = self.find_k_shortest_path()
@@ -383,11 +383,11 @@ class QuantumEnvironment:
         paths_info.extend(flattened_paths)
         paths_info = paths_info + [0] * (64 - len(paths_info))
 
-        # Normalization
+        # Normalization flat_paths
         paths_info = np.array(paths_info)
-        paths_min, paths_max = paths_info.min(), paths_info.max()
-        normalized_paths = (paths_info - paths_min) / (paths_max - paths_min)
-        state['flat_paths'] = normalized_paths
+        # paths_min, paths_max = paths_info.min(), paths_info.max()
+        # paths_info = (paths_info - paths_min) / (paths_max - paths_min)
+        state['flat_paths'] = paths_info
 
         # Transform np.array
         state['obs'] = np.array(state['obs'])
@@ -493,7 +493,8 @@ class QuantumEnvironment:
         for edge in subnet.edges:
             subnet[edge[0]][edge[1]]['weight'] = 1 / subnet[edge[0]][edge[1]]['num_key']
         # paths = list(nx.shortest_simple_paths(subnet, self.source_node, self.target_node, 'weight'))
-        paths = list(nx.all_shortest_paths(subnet, self.source_node, self.target_node, 'weight'))
+        # paths = list(nx.all_shortest_paths(subnet, self.source_node, self.target_node, 'weight'))
+        paths = list(nx.all_shortest_paths(subnet, self.source_node, self.target_node))
 
         if len(paths) < self.k:
             for _ in range(self.k - len(paths)):
@@ -787,7 +788,6 @@ if __name__ == "__main__":
 
     # Shortest path simulation
     env.metric_type = 'simple_shortest'
-    env.reset(seed=seed, max_time_step=max_time_step, training=False)
     # env.plot_topology()
     for _ in range(num_simulation):
         env.reset(seed=seed, max_time_step=max_time_step, training=False)
@@ -808,8 +808,7 @@ if __name__ == "__main__":
 
     # Weighted shortest path simulation
     env.metric_type = 'weighted_shortest'
-    s, _ = env.reset(seed=seed, max_time_step=max_time_step, training=False)
-    # env.plot_topology()https://ecconf.webex.com/ecconf/j.php?MTID=m73d0035bfb13fb2090b444ee3602aa35
+    # env.plot_topology()
     for _ in range(num_simulation):
         s, _ = env.reset(seed=seed, max_time_step=max_time_step, training=False)
         for _ in range(max_time_step):
@@ -829,7 +828,6 @@ if __name__ == "__main__":
 
     # QBER simulation
     env.metric_type = 'weighted_life_shortest'
-    s, _ = env.reset(seed=seed, max_time_step=max_time_step, training=False)
     # env.plot_topology()
     for _ in range(num_simulation):
         s, _ = env.reset(seed=seed, max_time_step=max_time_step, training=False)
