@@ -132,11 +132,13 @@ def train(q, q_target, memory, optimizer):
 def validation(env, q, max_time_step):
     epsilon = 0.0  # Linear annealing from 8% to 1%
     score = 0.0
+    q_valid = Qnet()
+    q_valid.load_state_dict(q.state_dict())
     s, _ = env.reset(0, max_time_step, True)
     done = False
 
     while not done:
-        a, out = q.sample_action(s, epsilon)
+        a, out = q_valid.sample_action(s, epsilon)
         s_prime, r, done, truncated, info = env.step(a)
         s = s_prime
 
@@ -190,15 +192,15 @@ def main():
 
         if memory.size() > 200:
             loss = train(q, q_target, memory, optimizer)
+            # temp_score = validation(env, q, max_time_step)
+            temp_score = score
+            # Best training model save
+            if high_score <= temp_score and epsilon < 0.1:
+                high_score = temp_score
+                torch.save(q.state_dict(), "model_save\cost266_highest_model_best")
+                print("Best model saved, score: ", temp_score)
         losses.append(loss)
         avg_losses.append(sum(losses[-print_interval:]) / print_interval)
-
-        # temp_score = validation(env, q, max_time_step)
-        score
-        if high_score <= score:
-            high_score = score
-            torch.save(q.state_dict(), "model_save\cost266_highest_model_final")
-            print("Best model saved, score: ", score)
 
         if n_epi % print_interval == 0 and n_epi != 0:
             q_target.load_state_dict(q.state_dict())

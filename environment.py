@@ -227,8 +227,8 @@ class QuantumEnvironment:
         # self.calculate_based_lifetime_weight(self.G)
         self.calculate_based_num_key_weight(self.G)
 
-        self.source_node, self.target_node = np.random.choice(np.arange(0, self.topology_conf['NUM_QKD_NODE']), size=2, replace=False)
-        # self.source_node, self.target_node = 0, self.topology_conf['NUM_QKD_NODE'] - 1
+        # self.source_node, self.target_node = np.random.choice(np.arange(0, self.topology_conf['NUM_QKD_NODE']), size=2, replace=False)
+        self.source_node, self.target_node = 0, self.topology_conf['NUM_QKD_NODE'] - 1
 
         state = self.generate_state()
         info = {}
@@ -330,8 +330,8 @@ class QuantumEnvironment:
 
         self.calculate_based_lifetime_weight(self.G)
 
-        self.source_node, self.target_node = np.random.choice(np.arange(0, self.topology_conf['NUM_QKD_NODE']), size=2, replace=False)
-        # self.source_node, self.target_node = 0, self.topology_conf['NUM_QKD_NODE'] - 1
+        # self.source_node, self.target_node = np.random.choice(np.arange(0, self.topology_conf['NUM_QKD_NODE']), size=2, replace=False)
+        self.source_node, self.target_node = 0, self.topology_conf['NUM_QKD_NODE'] - 1
         state = self.generate_state()
         next_state = state
 
@@ -678,7 +678,7 @@ class QuantumEnvironment:
                     self.key_pool[(routing_path[i], routing_path[i + 1])] = self.key_pool[(routing_path[i], routing_path[i+1])][self.consume_key_size:]
                 else:
                     self.G[routing_path[i+1]][routing_path[i]]['num_key'] -= self.consume_key_size
-                    self.G[routing_path[i+1]][routing_path[i]]['num_key'] -= 1
+                    self.G[routing_path[i+1]][routing_path[i]]['num_channel'] -= 1
                     self.key_pool[(routing_path[i+1], routing_path[i])] = self.key_pool[(routing_path[i+1], routing_path[i])][self.consume_key_size:]
             except:
                 print(routing_path)
