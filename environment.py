@@ -3,7 +3,14 @@ import copy
 import networkx as nx
 import numpy as np
 import matplotlib.pyplot as plt
+import seaborn as sns
 import topology_conf
+
+
+class Request:
+    def __init__(self):
+        self.discard_time = 0
+        self.ID = 0
 
 
 class QuantumEnvironment:
@@ -158,31 +165,43 @@ class QuantumEnvironment:
         # self.G[edge[0]][edge[1]]['num_key'] += 5
 
     def plot_topology(self):
-        position = {
-            0: [2, 12], 1: [4, 14], 2: [4, 10], 3: [8, 14], 4: [8, 10], 5: [10, 12]
-        }
+        # position = {
+        #     0: [2, 12], 1: [4, 14], 2: [4, 10], 3: [8, 14], 4: [8, 10], 5: [10, 12]
+        # }
         edge_labels = {}
         pos = nx.spring_layout(self.G)
 
         # nx.draw(self.G, pos=position, node_color=self.topology_conf['QKD_NODES_COLOR_MAP'], with_labels=True)
-        nx.draw(self.G, pos, with_labels=True)
-        # labels = nx.get_edge_attributes(self.G, 'count_rate')
-        for u, v, attr in self.G.edges(data=True):
-            edge_labels[(u, v)] = "{0}".format(attr['num_key'])
-        # nx.draw_networkx_edge_labels(self.G, position, edge_labels=edge_labels)
-        nx.draw_networkx_edge_labels(self.G, pos, edge_labels=edge_labels)
+        if self.topology_conf['NAME'] == 'KREONET':
+            kreonet_pos = {
+                0: [2, 10], 1: [3, 9], 2: [3, 11], 3: [9, 13], 4: [11, 12], 5: [10, 11], 6: [4, 8], 7: [6, 7],
+                8: [8, 7], 9: [7, 6], 10: [5, 5], 11: [3, 2], 12: [1, 1], 13: [10, 2], 14: [12, 2], 15: [13, 3],
+                16: [14, 5], 17: [10, 4]
+            }
+            labels = {
+                0: 'IC', 1: 'SW', 2: 'SO', 3: 'CC', 4: 'GN', 5: 'PC', 6: 'CA', 7: 'SJ',
+                8: 'OC', 9: 'DJ', 10: 'JJ', 11: 'GJ', 12: 'JE', 13: 'CW', 14: 'BS', 15: 'US',
+                16: 'PH', 17: 'DG'
+            }
+            nx.draw(self.G, kreonet_pos, with_labels=True, labels=labels)
+        else:
+            nx.draw(self.G, pos, with_labels=True)
+            # for u, v, attr in self.G.edges(data=True):
+            #     edge_labels[(u, v)] = "{0}".format(attr['num_key'])
+            # nx.draw_networkx_edge_labels(self.G, pos, edge_labels=edge_labels)
         plt.show()
 
     def plot_heatmap(self):
-        # Plot the lower triangular part of the heatmap with a red colormap
-        lower_triangular = np.tril(self.node_num_heat)
-        plt.imshow(lower_triangular, cmap='hot_r', interpolation='nearest', alpha=0.7, vmin=0, vmax=1)
-        plt.colorbar(label='Link Strength')
-
-        # Set the background color to white for the parts that do not appear
-        plt.gca().set_facecolor('white')
-
-        plt.title('Sophisticated Network with Red Link Strength Heatmap')
+        # # Plot the lower triangular part of the heatmap with a red colormap
+        # lower_triangular = np.tril(self.node_num_heat)
+        # plt.imshow(lower_triangular, cmap='hot_r', interpolation='nearest', alpha=0.7, vmin=0, vmax=1)
+        # plt.colorbar(label='Link Strength')
+        #
+        # # Set the background color to white for the parts that do not appear
+        # plt.gca().set_facecolor('white')
+        #
+        # plt.title('Sophisticated Network with Red Link Strength Heatmap')
+        sns.heatmap(self.node_num_heat, annot=False, cmap='coolwarm')
         plt.show()
 
     def reset(self, seed, max_time_step, training):
@@ -210,7 +229,7 @@ class QuantumEnvironment:
         self.total_generation_keys = 0
         self.remaining_keys = 0
         self.used_keys = 0
-        self.k = 3
+        self.k = 5
         self.reward = 0
         self.alpha = 0.0001
 
@@ -227,8 +246,8 @@ class QuantumEnvironment:
         # self.calculate_based_lifetime_weight(self.G)
         self.calculate_based_num_key_weight(self.G)
 
-        # self.source_node, self.target_node = np.random.choice(np.arange(0, self.topology_conf['NUM_QKD_NODE']), size=2, replace=False)
-        self.source_node, self.target_node = 0, self.topology_conf['NUM_QKD_NODE'] - 1
+        self.source_node, self.target_node = np.random.choice(np.arange(0, self.topology_conf['NUM_QKD_NODE']), size=2, replace=False)
+        # self.source_node, self.target_node = 0, self.topology_conf['NUM_QKD_NODE'] - 1
 
         state = self.generate_state()
         info = {}
@@ -287,9 +306,10 @@ class QuantumEnvironment:
                 else:
                     # print("Find the routing path")
                     self.reward += 1
+                    # print("src: ", self.source_node, "des: ", self.target_node, "path: ", routing_path)
                     for i in range(len(routing_path) - 1):
                         self.node_num_heat[routing_path[i]][routing_path[i+1]] += 1
-                        self.node_num_heat[routing_path[i+1]][routing_path[i]] += 1
+                        # self.node_num_heat[routing_path[i+1]][routing_path[i]] += 1
                         self.used_keys += self.consume_key_size
 
                 # for i in self.G.edges:
@@ -330,8 +350,9 @@ class QuantumEnvironment:
 
         self.calculate_based_lifetime_weight(self.G)
 
-        # self.source_node, self.target_node = np.random.choice(np.arange(0, self.topology_conf['NUM_QKD_NODE']), size=2, replace=False)
-        self.source_node, self.target_node = 0, self.topology_conf['NUM_QKD_NODE'] - 1
+        # self.source_node, self.target_node = 0, self.topology_conf['NUM_QKD_NODE'] - 1
+        self.source_node, self.target_node = np.random.choice(np.arange(0, self.topology_conf['NUM_QKD_NODE']), size=2, replace=False)
+
         state = self.generate_state()
         next_state = state
 
@@ -381,7 +402,7 @@ class QuantumEnvironment:
             start_index += len(path)
         flattened_paths = [node for path in state['paths'] for node in path]
         paths_info.extend(flattened_paths)
-        paths_info = paths_info + [0] * (64 - len(paths_info))
+        paths_info = paths_info + [0] * (128 - len(paths_info))
 
         # Normalization flat_paths
         paths_info = np.array(paths_info)
@@ -773,8 +794,8 @@ class QuantumEnvironment:
 
 
 if __name__ == "__main__":
-    env = QuantumEnvironment(topology_type='COST266')
-    max_time_step = 20    # 1_000
+    env = QuantumEnvironment(topology_type='KREONET')
+    max_time_step = 100    # 1_000
     num_simulation = 1
     seed = 0
     action = []
@@ -804,11 +825,11 @@ if __name__ == "__main__":
     shortest_average_remaining_keys /= num_simulation
     shortest_average_used_keys /= num_simulation
     # env.plot_topology()
-    # env.plot_heatmap()
+    env.plot_heatmap()
 
     # Weighted shortest path simulation
     env.metric_type = 'weighted_shortest'
-    # env.plot_topology()
+    env.plot_topology()
     for _ in range(num_simulation):
         s, _ = env.reset(seed=seed, max_time_step=max_time_step, training=False)
         for _ in range(max_time_step):
@@ -824,7 +845,7 @@ if __name__ == "__main__":
     weighted_shortest_average_remaining_keys /= num_simulation
     weighted_shortest_average_used_keys /= num_simulation
     # env.plot_topology()
-    # env.plot_heatmap()
+    env.plot_heatmap()
 
     # QBER simulation
     env.metric_type = 'weighted_life_shortest'
@@ -844,7 +865,7 @@ if __name__ == "__main__":
     qber_average_remaining_keys /= num_simulation
     qber_average_used_keys /= num_simulation
     # # env.plot_topology()
-    # # env.plot_heatmap()
+    env.plot_heatmap()
     #
     # # Num keys simulation
     # env.metric_type = 'num_key'
@@ -903,7 +924,7 @@ if __name__ == "__main__":
     print(f"{'Metric':<20}{'Success':<10}{'Session Blocking':<20}{'Total generation keys':<25}{'Used keys':<20}{'Used percentage':<10}")
     print(f"{'simple_shortest':<20}{shortest_average_reward:<10}{shortest_average_session_blocking:<20}{shortest_average_total_generation_keys:<25}{shortest_average_used_keys:<20}{(shortest_average_used_keys/shortest_average_total_generation_keys) * 100:<4.2f}%")
     print(f"{'weighted_shortest':<20}{weighted_shortest_average_reward:<10}{weighted_shortest_average_session_blocking:<20}{weighted_shortest_average_total_generation_keys:<25}{weighted_shortest_average_used_keys:<20}{(weighted_shortest_average_used_keys / weighted_shortest_average_total_generation_keys) * 100:<4.2f}%")
-    print(f"{'life_time_shortest':<20}{qber_average_reward:<10}{qber_average_session_blocking:<20}{qber_average_total_generation_keys:<25}{qber_average_used_keys:<20}{(qber_average_used_keys/qber_average_total_generation_keys) * 100:<4.2f}%")
+    print(f"{'life-aware_shortest':<20}{qber_average_reward:<10}{qber_average_session_blocking:<20}{qber_average_total_generation_keys:<25}{qber_average_used_keys:<20}{(qber_average_used_keys/qber_average_total_generation_keys) * 100:<4.2f}%")
     # print(f"{'Num keys':<20}{num_key_average_reward:<10}{num_key_average_session_blocking:<20}{num_key_average_total_generation_keys:<25}{num_key_average_used_keys:<20}{(num_key_average_used_keys/num_key_average_total_generation_keys) * 100:<4.2f}%")
     # print(f"{'QBER + Num keys':<20}{combination_average_reward:<10}{combination_average_session_blocking:<20}{combination_average_total_generation_keys:<25}{combination_average_used_keys:<20}{(combination_average_used_keys/combination_average_total_generation_keys) * 100:<4.2f}%")
 

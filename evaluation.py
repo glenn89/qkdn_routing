@@ -19,7 +19,7 @@ class Qnet(nn.Module):
         self.fc1 = nn.Linear(32 * 28 * 28 + 32, 128)
         self.fc2 = nn.Linear(128, 3)  # output class
 
-        self.path_fc1 = nn.Linear(64, 128)
+        self.path_fc1 = nn.Linear(128, 128)
         self.path_fc2 = nn.Linear(128, 32)
 
     def forward(self, x, y):

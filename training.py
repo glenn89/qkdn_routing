@@ -60,11 +60,13 @@ class Qnet(nn.Module):
         self.conv1 = nn.Conv2d(2, 16, kernel_size=3, padding=1)
         self.conv2 = nn.Conv2d(16, 32, kernel_size=3, padding=1)
 
-        self.path_fc1 = nn.Linear(64, 128)
+        self.path_fc1 = nn.Linear(128, 128)
         self.path_fc2 = nn.Linear(128, 32)
 
         self.fc1 = nn.Linear(32 * 28 * 28 + 32, 128)
         self.fc2 = nn.Linear(128, 3)  # output class
+
+        self.fc_v = nn.Linear(128, 1)
 
     def forward(self, x, y):
         # input state['obs']
@@ -76,48 +78,48 @@ class Qnet(nn.Module):
 
         # input state['flat_paths']
         y = self.path_fc1(y)
+        y = nn.ReLU()(y)
         y = self.path_fc2(y)
+        y = nn.ReLU()(y)
         y = y.view(y.size(0), -1)  # flatten
 
         z = torch.cat((x, y), dim=1)  # Concatenate cnn and fc results
 
         z = self.fc1(z)
         z = nn.ReLU()(z)
-        z = self.fc2(z)
-        z = F.softmax(z, dim=1)
+        out = F.softmax(self.fc2(z), dim=1)
+        critic = self.fc_v(z)
 
-        return z
+        return out, critic
 
     def sample_action(self, state, epsilon):
-        try:
-            obs = torch.from_numpy(state['obs']).float()
-            obs_path = torch.from_numpy(state['flat_paths']).float()
-            # path 구성하기
-            # obs_p
-            out = self.forward(obs, obs_path)
-            coin = random.random()
+        obs = torch.from_numpy(state['obs']).float()
+        obs_path = torch.from_numpy(state['flat_paths']).float()
+        # path 구성하기
+        # obs_p
+        out, _ = self.forward(obs, obs_path)
+        coin = random.random()
 
-            candidate_paths = state['paths']
+        candidate_paths = state['paths']
 
-            if coin < epsilon:
-                rand_idx = random.randint(0, 2)
-                return candidate_paths[rand_idx], rand_idx
-            else:
-                return candidate_paths[out.argmax().item()], out.argmax().item()
-        except:
-            print(candidate_paths)
+        if coin < epsilon:
+            rand_idx = random.randint(0, 2)
+            return candidate_paths[rand_idx], rand_idx
+        else:
+            return candidate_paths[out.argmax().item()], out.argmax().item()
 
 
-def train(q, q_target, memory, optimizer):
+def dqn_train(q, q_target, memory, optimizer):
     loss_lst = []
     for i in range(1):
         s, s_p, a, r, s_prime, s_p_prime, done_mask = memory.sample(batch_size)
         s = s.squeeze(1)    # Reshape: s shape: [32, 1, 2, x, x] --> [32, 2, x, x]
         s_prime = s_prime.squeeze(1)
 
-        q_out = q(s, s_p)
+        q_out, _ = q(s, s_p)
         q_a = q_out.gather(1, a)
-        max_q_prime = q_target(s_prime, s_p_prime).max(1)[0].unsqueeze(1)
+        max_q_prime, _ = q_target(s_prime, s_p_prime)
+        max_q_prime = max_q_prime.max(1)[0].unsqueeze(1)
         target = r + gamma * max_q_prime * done_mask
         loss = F.smooth_l1_loss(q_a, target)
 
@@ -137,16 +139,20 @@ def validation(env, q, max_time_step):
     s, _ = env.reset(0, max_time_step, True)
     done = False
 
-    while not done:
-        a, out = q_valid.sample_action(s, epsilon)
-        s_prime, r, done, truncated, info = env.step(a)
-        s = s_prime
+    with torch.no_grad():
+        while not done:
+            a, out = q_valid.sample_action(s, epsilon)
+            s_prime, r, done, truncated, info = env.step(a)
+            # print("Candidate routing paths: ", s['paths'])
+            # print("Action: ", a)
+            s = s_prime
 
-        if done:
-            score = r
-            break
+            if done:
+                score = r
+                break
 
     return score
+
 
 def main():
     # env = gym.make('CartPole-v1')
@@ -191,14 +197,15 @@ def main():
                 break
 
         if memory.size() > 200:
-            loss = train(q, q_target, memory, optimizer)
-            # temp_score = validation(env, q, max_time_step)
-            temp_score = score
+            loss = dqn_train(q, q_target, memory, optimizer)
+            temp_score = validation(env, q, max_time_step)
+            # temp_score = score
             # Best training model save
             if high_score <= temp_score and epsilon < 0.1:
                 high_score = temp_score
                 torch.save(q.state_dict(), "model_save\cost266_highest_model_best")
                 print("Best model saved, score: ", temp_score)
+                _ = validation(env, q, max_time_step)
         losses.append(loss)
         avg_losses.append(sum(losses[-print_interval:]) / print_interval)
 

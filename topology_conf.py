@@ -74,8 +74,6 @@ init_count_rate = np.random.randint(1, 4, size=34) * 100
 kreonet_topo = {
     'NAME': "KREONET",
     'QKD_NODES': [0, 1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15, 16, 17],
-    'QKD_NODES_NAME': {0: 'A', 1: 'B', 2: 'C', 3: 'D', 4: 'E', 5: 'F'},
-    'QKD_NODES_COLOR_MAP': ['red', 'green', 'green', 'green', 'green', 'yellow'],
     'QKD_TOPOLOGY': [
         [0, 0, 1, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0],  # Inchon [2, 10]
         [0, 0, 1, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0],  # Suwon [3, 9]
