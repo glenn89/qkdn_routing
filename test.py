@@ -1,86 +1,86 @@
 import random
 import numpy as np
-
-if __name__ == "__main__":
-    import numpy as np
-    import matplotlib.pyplot as plt
-
-    # results = np.random.binomial(500, 0.08)
-    # print(results)
-    #
-    # # Set the random seed for reproducibility (optional)
-    # np.random.seed(42)
-    #
-    # # Number of time steps
-    # num_steps = 100
-    #
-    # # Initial mean and standard deviation
-    # initial_mean = 5
-    # initial_std_dev = 3
-    #
-    # # Lists to store qber values and time steps
-    # time_steps = np.arange(num_steps)
-    # qber_values = []
-    #
-    # # Generate qber values over multiple time steps
-    # for step in range(num_steps):
-    #     # Generate a random float from a normal distribution with current mean and standard deviation
-    #     qber = np.random.normal(loc=initial_mean, scale=initial_std_dev)
-    #
-    #     # Clip the value to ensure it falls within a valid range (e.g., between 0 and 10)
-    #     qber = np.clip(qber, 0, 10)
-    #
-    #     # Append the qber value to the list
-    #     qber_values.append(qber)
-    #
-    #     # Adjust mean and standard deviation for the next time step (for demonstration purposes)
-    #     # initial_mean += 0.1
-    #     initial_std_dev -= 0.02
-    #
-    #     if initial_std_dev < 0:
-    #         initial_std_dev = 0.
-    #
-    # # Plot the qber values over time
-    # plt.plot(time_steps, qber_values, label='QBER')
-    # plt.xlabel('Time Steps')
-    # plt.ylabel('QBER')
-    # plt.title('QBER Over Time')
-    # plt.legend()
-    # plt.show()
-
-    def generate_packet_counts(size, alpha):
-        # 파레토 분포를 따르는 패킷 수 생성
-        pareto_counts = 30 - np.random.pareto(alpha, size) * 30
-        print(pareto_counts)
-        print(np.mean(pareto_counts), max(pareto_counts), min(pareto_counts))
-        for i in range(len(pareto_counts)):
-            if pareto_counts[i] < 0:
-                pareto_counts[i] = 0
-
-        return pareto_counts.astype(int)
-
-
-    def simulate_packet_generation(steps, alpha):
-        # 각 스텝에서 생성되는 패킷 수 생성
-        packet_counts = generate_packet_counts(steps, alpha)
-
-        # 패킷 수 시각화
-        plt.plot(range(1, steps + 1), packet_counts, marker='o', linestyle='-')
-        plt.xlabel('Step', fontsize=15)
-        plt.ylabel('The number of quantum key', fontsize=15)
-        plt.title('Simulation of Quantum key Generation', fontsize=15)
-        plt.xticks(fontsize=15)
-        plt.yticks(fontsize=15)
-        plt.grid(True)
-        plt.show()
-
-
-    # 시뮬레이션 파라미터 설정
-    steps = 100  # 시뮬레이션 스텝 수
-    alpha = 12     # 파레토 분포의 모수
-
-    # 패킷 생성 시뮬레이션
-    simulate_packet_generation(steps, alpha)
+#
+# if __name__ == "__main__":
+#     import numpy as np
+#     import matplotlib.pyplot as plt
+#
+#     # results = np.random.binomial(500, 0.08)
+#     # print(results)
+#     #
+#     # # Set the random seed for reproducibility (optional)
+#     # np.random.seed(42)
+#     #
+#     # # Number of time steps
+#     # num_steps = 100
+#     #
+#     # # Initial mean and standard deviation
+#     # initial_mean = 5
+#     # initial_std_dev = 3
+#     #
+#     # # Lists to store qber values and time steps
+#     # time_steps = np.arange(num_steps)
+#     # qber_values = []
+#     #
+#     # # Generate qber values over multiple time steps
+#     # for step in range(num_steps):
+#     #     # Generate a random float from a normal distribution with current mean and standard deviation
+#     #     qber = np.random.normal(loc=initial_mean, scale=initial_std_dev)
+#     #
+#     #     # Clip the value to ensure it falls within a valid range (e.g., between 0 and 10)
+#     #     qber = np.clip(qber, 0, 10)
+#     #
+#     #     # Append the qber value to the list
+#     #     qber_values.append(qber)
+#     #
+#     #     # Adjust mean and standard deviation for the next time step (for demonstration purposes)
+#     #     # initial_mean += 0.1
+#     #     initial_std_dev -= 0.02
+#     #
+#     #     if initial_std_dev < 0:
+#     #         initial_std_dev = 0.
+#     #
+#     # # Plot the qber values over time
+#     # plt.plot(time_steps, qber_values, label='QBER')
+#     # plt.xlabel('Time Steps')
+#     # plt.ylabel('QBER')
+#     # plt.title('QBER Over Time')
+#     # plt.legend()
+#     # plt.show()
+#
+#     def generate_packet_counts(size, alpha):
+#         # 파레토 분포를 따르는 패킷 수 생성
+#         pareto_counts = 30 - np.random.pareto(alpha, size) * 30
+#         print(pareto_counts)
+#         print(np.mean(pareto_counts), max(pareto_counts), min(pareto_counts))
+#         for i in range(len(pareto_counts)):
+#             if pareto_counts[i] < 0:
+#                 pareto_counts[i] = 0
+#
+#         return pareto_counts.astype(int)
+#
+#
+#     def simulate_packet_generation(steps, alpha):
+#         # 각 스텝에서 생성되는 패킷 수 생성
+#         packet_counts = generate_packet_counts(steps, alpha)
+#
+#         # 패킷 수 시각화
+#         plt.plot(range(1, steps + 1), packet_counts, marker='o', linestyle='-')
+#         plt.xlabel('Step', fontsize=15)
+#         plt.ylabel('The number of quantum key', fontsize=15)
+#         plt.title('Simulation of Quantum key Generation', fontsize=15)
+#         plt.xticks(fontsize=15)
+#         plt.yticks(fontsize=15)
+#         plt.grid(True)
+#         plt.show()
+#
+#
+#     # 시뮬레이션 파라미터 설정
+#     steps = 100  # 시뮬레이션 스텝 수
+#     alpha = 12     # 파레토 분포의 모수
+#
+#     # 패킷 생성 시뮬레이션
+#     simulate_packet_generation(steps, alpha)
 
 #
 # cost266_desc = {
@@ -226,3 +226,127 @@ if __name__ == "__main__":
 #
 #         nx.draw(graph, pos)
 #         plt.show()
+
+
+import gym
+import torch
+import torch.nn as nn
+import torch.nn.functional as F
+import torch.optim as optim
+from torch.distributions import Categorical
+
+# Hyperparameters
+learning_rate = 0.0005
+gamma = 0.98
+lmbda = 0.95
+eps_clip = 0.1
+K_epoch = 3
+T_horizon = 20
+
+
+class PPO(nn.Module):
+    def __init__(self):
+        super(PPO, self).__init__()
+        self.data = []
+
+        self.fc1 = nn.Linear(4, 256)
+        self.fc_pi = nn.Linear(256, 2)
+        self.fc_v = nn.Linear(256, 1)
+        self.optimizer = optim.Adam(self.parameters(), lr=learning_rate)
+
+    def pi(self, x, softmax_dim=0):
+        x = F.relu(self.fc1(x))
+        x = self.fc_pi(x)
+        prob = F.softmax(x, dim=softmax_dim)
+        return prob
+
+    def v(self, x):
+        x = F.relu(self.fc1(x))
+        v = self.fc_v(x)
+        return v
+
+    def put_data(self, transition):
+        self.data.append(transition)
+
+    def make_batch(self):
+        s_lst, a_lst, r_lst, s_prime_lst, prob_a_lst, done_lst = [], [], [], [], [], []
+        for transition in self.data:
+            s, a, r, s_prime, prob_a, done = transition
+
+            s_lst.append(s)
+            a_lst.append([a])
+            r_lst.append([r])
+            s_prime_lst.append(s_prime)
+            prob_a_lst.append([prob_a])
+            done_mask = 0 if done else 1
+            done_lst.append([done_mask])
+
+        s, a, r, s_prime, done_mask, prob_a = torch.tensor(s_lst, dtype=torch.float), torch.tensor(a_lst), \
+            torch.tensor(r_lst), torch.tensor(s_prime_lst, dtype=torch.float), \
+            torch.tensor(done_lst, dtype=torch.float), torch.tensor(prob_a_lst)
+        self.data = []
+        return s, a, r, s_prime, done_mask, prob_a
+
+    def train_net(self):
+        s, a, r, s_prime, done_mask, prob_a = self.make_batch()
+
+        for i in range(K_epoch):
+            td_target = r + gamma * self.v(s_prime) * done_mask
+            delta = td_target - self.v(s)
+            delta = delta.detach().numpy()
+
+            advantage_lst = []
+            advantage = 0.0
+            for delta_t in delta[::-1]:
+                advantage = gamma * lmbda * advantage + delta_t[0]
+                advantage_lst.append([advantage])
+            advantage_lst.reverse()
+            advantage = torch.tensor(advantage_lst, dtype=torch.float)
+
+            pi = self.pi(s, softmax_dim=1)
+            pi_a = pi.gather(1, a)
+            ratio = torch.exp(torch.log(pi_a) - torch.log(prob_a))  # a/b == exp(log(a)-log(b))
+
+            surr1 = ratio * advantage
+            surr2 = torch.clamp(ratio, 1 - eps_clip, 1 + eps_clip) * advantage
+            loss = -torch.min(surr1, surr2) + F.smooth_l1_loss(self.v(s), td_target.detach())
+
+            self.optimizer.zero_grad()
+            loss.mean().backward()
+            self.optimizer.step()
+
+
+def main():
+    env = gym.make('CartPole-v1')
+    model = PPO()
+    score = 0.0
+    print_interval = 20
+
+    for n_epi in range(10000):
+        s, _ = env.reset()
+        done = False
+        while not done:
+            for t in range(T_horizon):
+                prob = model.pi(torch.from_numpy(s).float())
+                m = Categorical(prob)
+                a = m.sample().item()
+                s_prime, r, done, truncated, info = env.step(a)
+
+                model.put_data((s, a, r / 100.0, s_prime, prob[a].item(), done))
+                s = s_prime
+
+                score += r
+                if done:
+                    break
+
+            model.train_net()
+
+        if n_epi % print_interval == 0 and n_epi != 0:
+            print("# of episode :{}, avg score : {:.1f}".format(n_epi, score / print_interval))
+            score = 0.0
+
+    env.close()
+
+
+if __name__ == '__main__':
+    main()

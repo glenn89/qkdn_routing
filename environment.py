@@ -794,7 +794,7 @@ class QuantumEnvironment:
 
 
 if __name__ == "__main__":
-    env = QuantumEnvironment(topology_type='KREONET')
+    env = QuantumEnvironment(topology_type='NSFNET')
     max_time_step = 100    # 1_000
     num_simulation = 1
     seed = 0

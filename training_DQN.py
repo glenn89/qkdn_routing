@@ -14,9 +14,9 @@ from environment import QuantumEnvironment
 
 # Hyperparameters
 learning_rate = 0.0005
-gamma = 0.97
+gamma = 0.98
 buffer_limit = 2000
-batch_size = 10
+batch_size = 32
 
 # Wandb config
 # wandb.init(project="QKD_rl_routing")
@@ -63,7 +63,7 @@ class Qnet(nn.Module):
         self.path_fc1 = nn.Linear(128, 128)
         self.path_fc2 = nn.Linear(128, 32)
 
-        self.fc1 = nn.Linear(32 * 28 * 28 + 32, 128)
+        self.fc1 = nn.Linear(32 * 14 * 14 + 32, 128)    # NSFNET: 14, COST266: 28
         self.fc2 = nn.Linear(128, 3)  # output class
 
         self.fc_v = nn.Linear(128, 1)
@@ -156,7 +156,7 @@ def validation(env, q, max_time_step):
 
 def main():
     # env = gym.make('CartPole-v1')
-    env = QuantumEnvironment(topology_type='COST266')
+    env = QuantumEnvironment(topology_type='NSFNET')
     q = Qnet()
     q_target = Qnet()
     q_target.load_state_dict(q.state_dict())
@@ -196,7 +196,7 @@ def main():
                 episode_memory = []
                 break
 
-        if memory.size() > 200:
+        if memory.size() > 2000:
             loss = dqn_train(q, q_target, memory, optimizer)
             temp_score = validation(env, q, max_time_step)
             # temp_score = score
