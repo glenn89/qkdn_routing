@@ -1,4 +1,5 @@
 import collections
+import csv
 import random
 import networkx as nx
 import matplotlib.pyplot as plt
@@ -13,9 +14,9 @@ import torch.optim as optim
 from environment import QuantumEnvironment
 
 # Hyperparameters
-learning_rate = 0.0005
+learning_rate = 0.0001  # 0.0005
 gamma = 0.98
-buffer_limit = 2000
+buffer_limit = 2500
 batch_size = 32
 
 # Wandb config
@@ -113,6 +114,7 @@ def dqn_train(q, q_target, memory, optimizer):
     loss_lst = []
     for i in range(1):
         s, s_p, a, r, s_prime, s_p_prime, done_mask = memory.sample(batch_size)
+        r = r / 100
         s = s.squeeze(1)    # Reshape: s shape: [32, 1, 2, x, x] --> [32, 2, x, x]
         s_prime = s_prime.squeeze(1)
 
@@ -196,7 +198,7 @@ def main():
                 episode_memory = []
                 break
 
-        if memory.size() > 2000:
+        if memory.size() > 200:
             loss = dqn_train(q, q_target, memory, optimizer)
             temp_score = validation(env, q, max_time_step)
             # temp_score = score
@@ -205,7 +207,8 @@ def main():
                 high_score = temp_score
                 torch.save(q.state_dict(), "model_save\cost266_highest_model_best")
                 print("Best model saved, score: ", temp_score)
-                _ = validation(env, q, max_time_step)
+                # _ = validation(env, q, max_time_step)
+        # losses.append(1/(loss+0.000001))
         losses.append(loss)
         avg_losses.append(sum(losses[-print_interval:]) / print_interval)
 
@@ -234,6 +237,15 @@ def main():
             ax2.plot(avg_losses, linestyle='-', color='red')
             ax2.set_ylabel('Loss')
             plt.show()
+
+            # save the results .csv
+            data_files = {"scores.csv": scores, "rewards.csv": rewards, "losses.csv": avg_losses}
+            for file_name, data in data_files.items():
+                with open(file_name, mode='w', newline='', encoding='utf-8') as file:
+                    writer = csv.writer(file)
+                    for value in data:
+                        writer.writerow([value])
+                print(f"Data saved to {file_name}")
 
     # env.close()
 

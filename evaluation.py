@@ -16,11 +16,14 @@ class Qnet(nn.Module):
         super(Qnet, self).__init__()
         self.conv1 = nn.Conv2d(2, 16, kernel_size=3, padding=1)
         self.conv2 = nn.Conv2d(16, 32, kernel_size=3, padding=1)
-        self.fc1 = nn.Linear(32 * 28 * 28 + 32, 128)
-        self.fc2 = nn.Linear(128, 3)  # output class
 
         self.path_fc1 = nn.Linear(128, 128)
         self.path_fc2 = nn.Linear(128, 32)
+
+        self.fc1 = nn.Linear(32 * 14 * 14 + 32, 128)  # NSFNET: 14, COST266: 28
+        self.fc2 = nn.Linear(128, 3)  # output class
+
+        self.fc_v = nn.Linear(128, 1)
 
     def forward(self, x, y):
         # input state['obs']
@@ -32,15 +35,16 @@ class Qnet(nn.Module):
 
         # input state['flat_paths']
         y = self.path_fc1(y)
+        y = nn.ReLU()(y)
         y = self.path_fc2(y)
+        y = nn.ReLU()(y)
         y = y.view(y.size(0), -1)  # flatten
 
         z = torch.cat((x, y), dim=1)  # Concatenate cnn and fc results
 
         z = self.fc1(z)
         z = nn.ReLU()(z)
-        z = self.fc2(z)
-        z = F.softmax(z, dim=1)
+        z = F.softmax(self.fc2(z), dim=1)
 
         return z
 
@@ -67,7 +71,7 @@ class Qnet(nn.Module):
 def main():
     seed = 0
     # env = gym.make('CartPole-v1')
-    env = QuantumEnvironment(topology_type='COST266')
+    env = QuantumEnvironment(topology_type='NSFNET')
     q = Qnet()
     q.load_state_dict(torch.load('model_save\cost266_highest_model_final'), strict=False)
 
@@ -76,7 +80,7 @@ def main():
 
     for n_epi in range(1):
         epsilon = 0.0  # Linear annealing from 8% to 1%
-        s, _ = env.reset(seed, 20, True)
+        s, _ = env.reset(seed, 500, True)
         done = False
         time_step = 0
 

@@ -116,7 +116,8 @@ class QuantumEnvironment:
                 # generated_keys = self.generate_key_size - np.random.pareto(1.5, 1).astype(int)[0] * 100
                 # np.random.seed(self.num_seed)
                 ######### Apply static generated key #########
-                generated_keys = self.generate_key_size
+                generated_keys = int(np.random.normal(loc=self.generate_key_size, scale=1, size=1))
+                # generated_keys = self.generate_key_size
 
                 # print("Gen key: ", generated_keys)
                 if generated_keys < 0:
@@ -211,7 +212,7 @@ class QuantumEnvironment:
         self.training = training
 
         self.generate_key_time_slot = 15
-        self.generate_key_size = 2
+        self.generate_key_size = 3
         # self.generate_key_size = np.random.pareto(1, 1).astype(int)[0] * 20
         self.init_num_channel = 3
         self.consume_key_size = 1
@@ -229,7 +230,7 @@ class QuantumEnvironment:
         self.total_generation_keys = 0
         self.remaining_keys = 0
         self.used_keys = 0
-        self.k = 5
+        self.k = 3
         self.reward = 0
         self.alpha = 0.0001
 
@@ -384,36 +385,43 @@ class QuantumEnvironment:
         # adj_min, adj_max = adj_matrix_np.min(), adj_matrix_np.max()
         # adj_matrix_np = (adj_matrix_np - adj_min) / (adj_max - adj_min)
 
-        weight_matrix_np = nx.to_numpy_array(self.G, weight='num_key')
+        weight_matrix_np = nx.to_numpy_array(self.G, weight='weight')
+
+        num_key_matrix_np = nx.to_numpy_array(self.G, weight='num_key')
         # Normalization weight matrix
         # weight_min, weight_max = weight_matrix_np.min(), weight_matrix_np.max()
         # weight_matrix_np = (weight_matrix_np - weight_min) / (weight_max - weight_min)
 
-        state['obs'] = np.stack([adj_matrix_np, weight_matrix_np], axis=0)  # staked (2, H, W)
+        state['obs'] = np.stack([adj_matrix_np, num_key_matrix_np, weight_matrix_np], axis=0)  # staked (2, H, W)
         state['obs'] = state['obs'][np.newaxis, :]  # shape convert (1, 2, H, W)
 
-        state['paths'] = self.find_k_shortest_path()
-        paths_info = []
-        paths_index = self.k * 2
-        start_index = 0
-        for path in state['paths']:
-            paths_info.append(len(path))
-            paths_info.append(paths_index + start_index)
-            start_index += len(path)
-        flattened_paths = [node for path in state['paths'] for node in path]
-        paths_info.extend(flattened_paths)
-        paths_info = paths_info + [0] * (128 - len(paths_info))
-
-        # Normalization flat_paths
-        paths_info = np.array(paths_info)
-        # paths_min, paths_max = paths_info.min(), paths_info.max()
-        # paths_info = (paths_info - paths_min) / (paths_max - paths_min)
-        state['flat_paths'] = paths_info
+        state['paths'], state['valid_mask'] = self.find_k_shortest_path() # shape (1, 3)
+        # 고정 길이
+        fixed_len = 32
+        # padding or trimming
+        state['padding_paths'] = [p[:fixed_len] + [0] * max(0, fixed_len - len(p)) for p in state['paths']]
+        # paths_info = []
+        # paths_index = self.k * 2
+        # start_index = 0
+        # for path in state['paths']:
+        #     paths_info.append(len(path))
+        #     paths_info.append(paths_index + start_index)
+        #     start_index += len(path)
+        # flattened_paths = [node for path in state['paths'] for node in path]
+        # paths_info.extend(flattened_paths)
+        # paths_info = paths_info + [0] * (128 - len(paths_info))
+        #
+        # # Normalization flat_paths
+        # paths_info = np.array(paths_info)
+        # # paths_min, paths_max = paths_info.min(), paths_info.max()
+        # # paths_info = (paths_info - paths_min) / (paths_max - paths_min)
+        # state['flat_paths'] = paths_info
 
         # Transform np.array
         state['obs'] = np.array(state['obs'])
-        state['flat_paths'] = np.array(state['flat_paths'])
-        state['flat_paths'] = state['flat_paths'][np.newaxis, :]
+        state['padding_paths'] = np.array(state['padding_paths'])
+        state['padding_paths'] = state['padding_paths'][np.newaxis, :]
+        state['valid_mask'] = np.array(state['valid_mask'])
 
         return state
 
@@ -504,25 +512,35 @@ class QuantumEnvironment:
         #                 copied_G.edges[(node_1_id, node_2_id)]['num_channel'] > 0 else False
         # )
         paths = []
+        paths_mask = []
         if len(subnet.edges) == 0 or not nx.has_path(subnet, source=self.source_node, target=self.target_node):
             for _ in range(self.k):
                 paths.append([])
-            routing_path = paths
-            return routing_path
+                paths_mask.append(0)
+            return paths, paths_mask
 
         # routing_path = nx.shortest_path(subnet, 0, 5)
         for edge in subnet.edges:
             subnet[edge[0]][edge[1]]['weight'] = 1 / subnet[edge[0]][edge[1]]['num_key']
         # paths = list(nx.shortest_simple_paths(subnet, self.source_node, self.target_node, 'weight'))
         # paths = list(nx.all_shortest_paths(subnet, self.source_node, self.target_node, 'weight'))
-        paths = list(nx.all_shortest_paths(subnet, self.source_node, self.target_node))
+        try:
+            # 다양한 경로를 순차적으로 얻음 (가중치 기준)
+            all_paths_iter = nx.shortest_simple_paths(subnet, self.source_node, self.target_node, weight='weight')
+            for path in all_paths_iter:
+                paths.append(path)
+                paths_mask.append(1)
+                if len(paths) >= self.k:
+                    break
+        except nx.NetworkXNoPath:
+            pass
 
-        if len(paths) < self.k:
-            for _ in range(self.k - len(paths)):
-                paths.append([])
-        routing_path = paths[:self.k]
+            # 부족한 부분은 padding
+        while len(paths) < self.k:
+            paths.append([])
+            paths_mask.append(0)
 
-        return routing_path
+        return paths, paths_mask
 
     def find_routing_path(self):
         accumulate_qber = []
@@ -692,15 +710,11 @@ class QuantumEnvironment:
 
     def apply_routing_path(self, routing_path):
         for i in range(len(routing_path) - 1):
+            sorted_key = tuple(sorted((routing_path[i], routing_path[i + 1])))
             try:
-                if routing_path[i] < routing_path[i+1]:
-                    self.G[routing_path[i]][routing_path[i+1]]['num_key'] -= self.consume_key_size
-                    self.G[routing_path[i]][routing_path[i+1]]['num_channel'] -= 1
-                    self.key_pool[(routing_path[i], routing_path[i + 1])] = self.key_pool[(routing_path[i], routing_path[i+1])][self.consume_key_size:]
-                else:
-                    self.G[routing_path[i+1]][routing_path[i]]['num_key'] -= self.consume_key_size
-                    self.G[routing_path[i+1]][routing_path[i]]['num_channel'] -= 1
-                    self.key_pool[(routing_path[i+1], routing_path[i])] = self.key_pool[(routing_path[i+1], routing_path[i])][self.consume_key_size:]
+                self.G[sorted_key[0]][sorted_key[1]]['num_key'] -= self.consume_key_size
+                self.G[sorted_key[0]][sorted_key[1]]['num_channel'] -= 1
+                self.key_pool[sorted_key] = self.key_pool[sorted_key][self.consume_key_size:]
             except:
                 print(routing_path)
 
@@ -825,7 +839,7 @@ if __name__ == "__main__":
     shortest_average_remaining_keys /= num_simulation
     shortest_average_used_keys /= num_simulation
     # env.plot_topology()
-    env.plot_heatmap()
+    # env.plot_heatmap()
 
     # Weighted shortest path simulation
     env.metric_type = 'weighted_shortest'
@@ -845,7 +859,7 @@ if __name__ == "__main__":
     weighted_shortest_average_remaining_keys /= num_simulation
     weighted_shortest_average_used_keys /= num_simulation
     # env.plot_topology()
-    env.plot_heatmap()
+    # env.plot_heatmap()
 
     # QBER simulation
     env.metric_type = 'weighted_life_shortest'
@@ -865,7 +879,7 @@ if __name__ == "__main__":
     qber_average_remaining_keys /= num_simulation
     qber_average_used_keys /= num_simulation
     # # env.plot_topology()
-    env.plot_heatmap()
+    # env.plot_heatmap()
     #
     # # Num keys simulation
     # env.metric_type = 'num_key'
