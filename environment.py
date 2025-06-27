@@ -87,9 +87,9 @@ class QuantumEnvironment:
         }
         nx.set_edge_attributes(self.G, edges_attribute)
         self.key_pool.update((key, []) for key in self.G.edges)  # Generate key pool
-        self.num_key_with_qber()  # Reflect the number of keys with qber
+        self.key_generation()  # Reflect the number of keys with qber
 
-    def num_key_with_qber(self):
+    def key_generation(self):
         edges = list(self.G.edges())
         # Update qber and count rate
         # for edge in edges:
@@ -345,7 +345,7 @@ class QuantumEnvironment:
             self.G.edges[(u, v)]['num_key'] = len(self.key_pool[(u, v)])
 
         if self.time_step != 0 and self.time_step % self.generate_key_time_slot == 0:
-            self.num_key_with_qber()
+            self.key_generation()
             # print(self.G.edges(data=True))
         # print(self.metric_type, self.G.edges(data=True))
 
@@ -382,17 +382,17 @@ class QuantumEnvironment:
         # Configurate state
         adj_matrix_np = nx.to_numpy_array(self.G, weight=None)
         # Normalization adj matrix
-        # adj_min, adj_max = adj_matrix_np.min(), adj_matrix_np.max()
-        # adj_matrix_np = (adj_matrix_np - adj_min) / (adj_max - adj_min)
+        adj_min, adj_max = adj_matrix_np.min(), adj_matrix_np.max()
+        adj_matrix_np = (adj_matrix_np - adj_min) / (adj_max - adj_min)
 
-        weight_matrix_np = nx.to_numpy_array(self.G, weight='weight')
+        # weight_matrix_np = nx.to_numpy_array(self.G, weight='weight')
 
         num_key_matrix_np = nx.to_numpy_array(self.G, weight='num_key')
         # Normalization weight matrix
-        # weight_min, weight_max = weight_matrix_np.min(), weight_matrix_np.max()
-        # weight_matrix_np = (weight_matrix_np - weight_min) / (weight_max - weight_min)
+        num_key_min, num_key_max = num_key_matrix_np.min(), num_key_matrix_np.max()
+        num_key_matrix_np = (num_key_matrix_np - num_key_min) / (num_key_max - num_key_min)
 
-        state['obs'] = np.stack([adj_matrix_np, num_key_matrix_np, weight_matrix_np], axis=0)  # staked (2, H, W)
+        state['obs'] = np.stack([adj_matrix_np, num_key_matrix_np], axis=0)  # staked (2, H, W)
         state['obs'] = state['obs'][np.newaxis, :]  # shape convert (1, 2, H, W)
 
         state['paths'], state['valid_mask'] = self.find_k_shortest_path() # shape (1, 3)
@@ -517,6 +517,7 @@ class QuantumEnvironment:
             for _ in range(self.k):
                 paths.append([])
                 paths_mask.append(0)
+            paths_mask.append(1)
             return paths, paths_mask
 
         # routing_path = nx.shortest_path(subnet, 0, 5)
@@ -526,7 +527,9 @@ class QuantumEnvironment:
         # paths = list(nx.all_shortest_paths(subnet, self.source_node, self.target_node, 'weight'))
         try:
             # 다양한 경로를 순차적으로 얻음 (가중치 기준)
-            all_paths_iter = nx.shortest_simple_paths(subnet, self.source_node, self.target_node, weight='weight')
+            # all_paths_iter = nx.shortest_simple_paths(subnet, self.source_node, self.target_node, weight='weight')
+            all_paths_iter = nx.shortest_simple_paths(subnet, self.source_node, self.target_node)
+
             for path in all_paths_iter:
                 paths.append(path)
                 paths_mask.append(1)
@@ -538,6 +541,9 @@ class QuantumEnvironment:
             # 부족한 부분은 padding
         while len(paths) < self.k:
             paths.append([])
+            paths_mask.append(0)
+
+        if len(paths) == self.k:
             paths_mask.append(0)
 
         return paths, paths_mask
