@@ -350,6 +350,7 @@ def main():
     temp_score = 0.0
     loss = 0.0
     reward = 0.0
+    reward_sum = 0.0
     rewards = []
     high_score = 0.0
     scores = []
@@ -359,6 +360,7 @@ def main():
     for n_epi in range(max_episode):
         s, _ = env.reset(0, max_time_step, True)
         done = False
+        reward_sum = 0.0
 
         while not done:
             a, action, prob = model.sample_action(s)
@@ -368,6 +370,7 @@ def main():
             transition = (s, action, r, s_prime, prob[action].item(), done_mask)
             model.put_data(transition)
             s = s_prime
+            reward_sum += r
 
             if done:
                 # print("action: ", action, a, prob)
@@ -381,7 +384,7 @@ def main():
             avg_losses.append(sum(losses[-print_interval:]) / print_interval)
 
             print("n_episode :{}, score : {:.1f}, loss : {:.5f}".format(
-                n_epi, score/print_interval, loss))
+                n_epi, reward_sum, loss))
             score = 0.0
 
         scores.append(score)

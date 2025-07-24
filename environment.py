@@ -262,6 +262,7 @@ class QuantumEnvironment:
         done = False
         truncated = False
         next_state = {}
+        self.reward = 0
         if self.topology_conf['NAME'] == 'SIMPLE':
             self.source_node, self.target_node = 0, 3
         # else:
@@ -332,7 +333,7 @@ class QuantumEnvironment:
 
                 self.apply_routing_path(routing_path)
                 # print("Find the routing path")
-                self.reward += 1
+                self.reward = 1
                 for i in range(len(routing_path) - 1):
                     self.node_num_heat[routing_path[i]][routing_path[i + 1]] += 1
                     self.node_num_heat[routing_path[i + 1]][routing_path[i]] += 1
