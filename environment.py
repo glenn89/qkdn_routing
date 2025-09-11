@@ -262,7 +262,6 @@ class QuantumEnvironment:
         done = False
         truncated = False
         next_state = {}
-        self.reward = 0
         if self.topology_conf['NAME'] == 'SIMPLE':
             self.source_node, self.target_node = 0, 3
         # else:
@@ -327,6 +326,7 @@ class QuantumEnvironment:
                 # print("Don't find the routing path")
                 # print("Time step: ", self.time_step, "Blocking reason: ", self.G.edges(data=True))
                 self.session_blocking -= 1
+                self.reward = 0
             else:
                 self.service_duration_time.append(5)
                 self.service_routing_path.append(routing_path)

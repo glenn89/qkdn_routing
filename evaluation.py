@@ -50,4 +50,4 @@ def evaluate(model_path, num_episodes=50, max_time_step=100, topology='NSFNET'):
 if __name__ == '__main__':
     # 모델 파일 경로 (training_PPO.py 에서 저장한 경로와 일치시킬 것)
     MODEL_PATH = "model_save/PPO_cost266_highest_model_final"
-    evaluate(MODEL_PATH, num_episodes=100, max_time_step=100)
+    evaluate(MODEL_PATH, num_episodes=1, max_time_step=100)
