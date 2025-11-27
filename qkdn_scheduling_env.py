@@ -80,12 +80,13 @@ class QKDNSchedulingEnv(gym.Env):
         self,
         topology_conf: dict,
         max_time_steps: int = 200,
-        max_requests_per_step: int = 8,
+        max_requests_per_step: int = 10,
         consume_key_size: int = 1,
         key_pool_size: int = 64,
-        initial_key_lifetime: int = 32,
-        generate_key_size: int = 2,
+        initial_key_lifetime: int = 2,
+        generate_key_size: int = 1,
         key_gen_noise_std: float = 1.0,
+
         alpha_hop_weight: float = 0.0,
         invalid_action_penalty: float = -0.05,
         max_backlog: int = 512,
@@ -106,6 +107,8 @@ class QKDNSchedulingEnv(gym.Env):
         self.initial_key_lifetime = int(initial_key_lifetime)
         self.generate_key_size = int(generate_key_size)
         self.key_gen_noise_std = float(key_gen_noise_std)
+        self.expired_keys_last = 0
+        self.expired_keys_total = 0
         self.alpha_hop_weight = float(alpha_hop_weight)
         self.invalid_action_penalty = float(invalid_action_penalty)
 
@@ -172,6 +175,7 @@ class QKDNSchedulingEnv(gym.Env):
         self.total_success = 0
         self.total_blocking = 0
         self.temp_queue = []  # new episode starts with empty temp queue
+        self.expired_keys_last = 0
 
         # Prepare initial requests from carryover first, then fill with fresh generation
         self._start_next_episode()  # uses carryover first then fresh
@@ -191,20 +195,25 @@ class QKDNSchedulingEnv(gym.Env):
         valid_mask = self._request_mask()
         chosen_idx = None
         served_success = False
+        path_len = 0.0
 
         if action < 0 or action >= self.max_requests_per_step or not valid_mask[action]:
             # invalid action
             reward += self.invalid_action_penalty
+            path_len = 0.0
         else:
             chosen_idx = int(action)
             req = self.current_requests[chosen_idx]
-            served_success = self._serve_request(req)  # decrements ONE key per edge on success
+            served_success, path = self._serve_request(req)  # decrements ONE key per edge on success
             if served_success:
                 reward += 1.0
                 self.total_success += 1
                 del self.current_requests[chosen_idx]
+                path_len = float(len(path) - 1)
             else:
+                reward += -1.0
                 self.total_blocking += 1
+                path_len = 0.0
 
         # 2) Advance time and generate next batch of candidates (fresh only)
         self.time_step += 1
@@ -230,6 +239,9 @@ class QKDNSchedulingEnv(gym.Env):
             "blocking_total": self.total_blocking,
             "episode_idx": self.episode_idx,
             "dropped_wait_expired": self.dropped_wait_expired,
+            "path_length": path_len,
+            "expired_keys_last_episode": self.expired_keys_last,
+            "expired_keys_total": self.expired_keys_total,
         }
         return obs, reward, terminated, truncated, info
 
@@ -301,10 +313,18 @@ class QKDNSchedulingEnv(gym.Env):
         - Increment episode counter.
         """
         # Lifetime aging (-1) & expiry
+        expired_this = 0  # ★ 추가: 이번 에피소드에서 만료된 키 수
         for e in list(self.key_pool.keys()):
-            if not self.key_pool[e]:
+            L = self.key_pool[e]
+            if not L:
                 continue
-            self.key_pool[e] = [k - 1 for k in self.key_pool[e] if (k - 1) > 0]
+            aged = [k - 1 for k in L]  # 수명 -1
+            keep = [k for k in aged if k > 0]
+            expired_this += (len(aged) - len(keep))
+            self.key_pool[e] = keep
+
+        self.expired_keys_last = expired_this
+        self.expired_keys_total += expired_this
 
         # Generate keys per episode
         self._generate_keys_episode()
@@ -413,18 +433,18 @@ class QKDNSchedulingEnv(gym.Env):
     def _serve_request(self, req: Request):
         path = self._weighted_shortest_path(req.src, req.dst)
         if path is None:
-            return False
+            return False, path
         # Check capacity: require at least ONE key per edge
         for i in range(len(path) - 1):
             e = self._ekey(path[i], path[i + 1])
             if len(self.key_pool[e]) < 1:
-                return False
+                return False, path
         # Consume exactly ONE key per edge (oldest-first)
         for i in range(len(path) - 1):
             e = self._ekey(path[i], path[i + 1])
             if self.key_pool[e]:
                 del self.key_pool[e][0]
-        return True
+        return True, path
 
     def _generate_requests(self, t: int, limit: int | None = None):
         # Randomly sample up to max_requests_per_step unique pairs
@@ -465,6 +485,7 @@ class QKDNSchedulingEnv(gym.Env):
                 min_keys = float(self._path_min_keys(path))
             # Normalize hops by (N-1)
             hops_norm = hops / max(1.0, float(self.N - 1))
+
             # Normalize min_keys by key_pool_size
             min_keys_norm = min_keys / max(1.0, float(self.key_pool_size))
 
@@ -500,7 +521,7 @@ class QKDNSchedulingEnv(gym.Env):
 if __name__ == "__main__":
     # Small smoke test (may require gymnasium to be installed)
     topo = {"NUM_QKD_NODE": 6}
-    env = QKDNSchedulingEnv(topo, max_time_steps=5, max_requests_per_step=5, seed=0,
+    env = QKDNSchedulingEnv(topo, max_time_steps=10, max_requests_per_step=10, seed=0,
                             auto_continue=True, request_wait_episodes=2)
     obs, info = env.reset()
     print("Reset obs keys:", list(obs.keys()), "info:", info)

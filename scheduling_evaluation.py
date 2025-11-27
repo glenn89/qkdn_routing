@@ -68,6 +68,21 @@ def _select_action_fifo(obs: dict) -> int:
     valid = np.flatnonzero(mask)
     return int(valid[0]) if valid.size > 0 else 0
 
+def _select_action_min_path(obs: dict) -> int:
+    """
+    단순 FIFO: 현재 유효 요청 중 '가장 앞' 인덱스를 선택.
+    유효 요청이 하나도 없으면 0으로 폴백.
+    """
+    mask = np.asarray(obs["mask"]).astype(bool)  # [R]
+    if not mask.any():
+        return 0
+    req = np.asarray(obs["requests"])
+    if req.ndim < 2 or req.shape[1] < 3:
+        return int(np.flatnonzero(mask)[0])
+    # invalid는 +inf로 가려서 argmin 대상 제외, 동률이면 가장 앞 인덱스 선택
+    scored = np.where(mask, req[:, 2], np.inf)
+    return int(np.argmin(scored))
+
 # ---------- 메인 평가 루틴 ----------
 def evaluate_checkpoint(
     checkpoint_path: str,
@@ -78,7 +93,7 @@ def evaluate_checkpoint(
     N: int = 6,
     seed: int = 0,
     device: str | torch.device = "cuda",
-    use_random_policy: bool = False,   # True면 랜덤 정책으로 평가
+    use_random_policy: bool = False,
 ) -> dict:
     device = torch.device(device if (isinstance(device, str) and device == "cuda" and torch.cuda.is_available()) else "cpu")
 
@@ -109,12 +124,16 @@ def evaluate_checkpoint(
         if use_random_policy and agent is not None:
             a = _select_action_argmax(agent, obs, device)
         else:
-            # a = _select_action_random(obs)
-            a = _select_action_fifo(obs)
+            a = _select_action_random(obs)
+            # a = _select_action_fifo(obs)
+            # a = _select_action_min_path(obs)
 
         prev_ep = cur_ep
+        # print(a)
+        # print(obs['mask'])
         obs, r, terminated, truncated, info = env.step(a)
         cur_ep = info.get("episode_idx", getattr(env, "episode_idx", prev_ep))
+        # print(a, info['path_length'])
 
         # 로컬 집계: r>0이면 성공, 아니면 블로킹으로 셈
         ep_reward += float(r)
@@ -122,6 +141,7 @@ def evaluate_checkpoint(
             ep_success += 1
         else:
             ep_blocking += 1
+        expired_key = info.get("expired_keys_last_episode")
 
         # 에피소드 경계 감지: episode_idx가 바뀌면 이전 에피소드 종료
         if cur_ep != prev_ep:
@@ -129,7 +149,7 @@ def evaluate_checkpoint(
             print(
                 f"[eval] episode {ep_idx_print}/{episodes} "
                 f"reward={ep_reward:.3f} success_total={ep_success} "
-                f"blocking_total={ep_blocking}"
+                f"blocking_total={ep_blocking} expired_key={expired_key}"
             )
             rewards.append(ep_reward)
 
@@ -144,6 +164,7 @@ def evaluate_checkpoint(
         "episodes": float(episodes),
         "avg_reward": float(rewards_np.mean() if rewards_np.size else 0.0),
         "std_reward": float(rewards_np.std() if rewards_np.size > 1 else 0.0),
+        "total_expired key": int(info.get("expired_keys_total")),
         "device": str(device),
     }
     print("===== Evaluation Summary =====")
@@ -154,11 +175,11 @@ def evaluate_checkpoint(
 
 if __name__ == "__main__":
     # 예시 실행: 경로/파라미터를 프로젝트 설정에 맞게 바꾸세요
-    ckpt = "./checkpoints/setppo_final.pt"
+    ckpt = "./checkpoints/setppo_update2000.pt"
     if os.path.exists(ckpt):
         evaluate_checkpoint(
             ckpt,
-            episodes=10,
+            episodes=100,
             max_time_step=10,
             R_max=10,
             N=14,

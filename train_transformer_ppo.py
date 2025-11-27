@@ -4,6 +4,7 @@ import math
 import random
 from dataclasses import dataclass
 from typing import Dict, Tuple, List
+import matplotlib.pyplot as plt
 
 import numpy as np
 import torch
@@ -107,47 +108,18 @@ class GlobalEncoder(nn.Module):
             nn.Conv2d(16, 32, 3, padding=1), nn.ReLU(),
             nn.AdaptiveAvgPool2d(1)  # -> [B, 32, 1, 1]
         )
-        self.t_proj = nn.Linear(1, 16)
-        self.proj = nn.Linear(32 + 16, d_out)
+        self.proj = nn.Linear(32, d_out)
 
-    def forward(self, num_key, t):  # num_key: [B,N,N], t: ideally [B,1]
+    def forward(self, num_key):  # num_key: [B,N,N], t: ideally [B,1]
         # Ensure num_key has batch dim: [B,N,N] -> [B,1,N,N]
         if num_key.dim() == 2:                  # [N,N]
             num_key = num_key.unsqueeze(0)      # [1,N,N]
         x = num_key.unsqueeze(1).float()        # [B,1,N,N]
         g = self.conv(x).flatten(1)             # [B,32]
-
-        # ---- Force t to [B,1] and match batch with g ----
-        B = g.size(0)
-        if t is None:
-            t = torch.zeros(B, 1, device=g.device, dtype=g.dtype)
-        else:
-            if t.dim() == 0:                    # [] -> [1,1]
-                t = t.view(1, 1)
-            elif t.dim() == 1:                  # [B] or [1] -> [B,1]/[1,1]
-                t = t.view(-1, 1)
-            elif t.dim() == 2:                  # [B,1] ok, [B,K] -> slice first
-                if t.size(1) != 1:
-                    t = t[:, :1]
-            else:                                # [*,*,*] -> [B,1]
-                b = t.size(0)
-                t = t.view(b, -1)[:, :1]
-
-            # If batch doesn't match g, expand or reshape to [B,1]
-            if t.size(0) == 1 and B > 1:
-                t = t.expand(B, 1)
-            elif t.size(0) != B:
-                if t.size(0) < B:
-                    reps = (B + t.size(0) - 1) // t.size(0)
-                    t = t.repeat(reps, 1)[:B, :]
-                else:
-                    t = t[:B, :]
-
-        t = t.to(g.device, dtype=g.dtype)
-        t_feat = F.relu(self.t_proj(t))         # [B,16]
-        g = torch.cat([g, t_feat], dim=-1)      # [B,48]
         g = self.proj(g)                        # [B,d_out]
         return g
+
+
 class RequestSetEncoder(nn.Module):
     """(R,5) -> row MLP -> SABx2 -> (R,d_req)"""
     def __init__(self, d_req: int, n_head: int, dropout: float = 0.0):
@@ -185,22 +157,21 @@ class SetTransformerPolicy(nn.Module):
     def forward(self, obs: Dict[str, torch.Tensor]):
         obs, added = self._ensure_batch(obs)
 
-        num_key = obs["num_key"]     # [B,N,N]
-        requests = obs["requests"]   # [B,R,5]
-        t = obs["t"]                 # [B,1]
-        B, R, _ = requests.shape
+        num_key  = obs["num_key"]     # [B,N,N]
+        requests = obs["requests"]    # [B,R,5]
+        B, R, _  = requests.shape
         assert R == self.R_max
 
-        g = self.global_enc(num_key, t)                 # [B,dg]
-        Z = self.req_enc(requests)                      # [B,R,dr]
+        g = self.global_enc(num_key)          # [B,dg]  # <- t 제거
+        Z = self.req_enc(requests)            # [B,R,dr]
 
-        g_expand = g.unsqueeze(1).expand(-1, R, -1)     # [B,R,dg]
-        policy_in = torch.cat([g_expand, Z], dim=-1)    # [B,R,dg+dr]
-        logits = self.policy_head(policy_in).squeeze(-1) # [B,R]
+        g_expand = g.unsqueeze(1).expand(-1, R, -1)  # [B,R,dg]
+        policy_in = torch.cat([g_expand, Z], dim=-1) # [B,R,dg+dr]
+        logits = self.policy_head(policy_in).squeeze(-1)
 
-        Z_pool = Z.mean(dim=1)                          # [B,dr]
-        v_in = torch.cat([g, Z_pool], dim=-1)           # [B,dg+dr]
-        value = self.value_head(v_in)                   # [B,1]
+        Z_pool = Z.mean(dim=1)
+        v_in = torch.cat([g, Z_pool], dim=-1)
+        value = self.value_head(v_in)
         return logits, value
 
     def act(self, obs: Dict[str, torch.Tensor]):
@@ -208,9 +179,22 @@ class SetTransformerPolicy(nn.Module):
         logits, value = self.forward(obs_fixed)
         mask = obs_fixed["mask"].to(torch.bool)   # [B,R]
         masked_logits = logits.masked_fill(~mask, float('-inf'))
+
+        all_invalid = (~mask).all(dim=-1)  # [B]
+        if all_invalid.any():
+            # 해당 배치의 로짓을 0으로 만들고, 액션은 0으로 고정 (또는 임의 유효 인덱스)
+            masked_logits = masked_logits.masked_fill(all_invalid.unsqueeze(1), float('-inf'))
+            masked_logits[all_invalid, 0] = 0.0
+
         dist = torch.distributions.Categorical(logits=masked_logits)
         action = dist.sample()                # [B]
         logp = dist.log_prob(action)          # [B]
+
+        # print("logits: ", masked_logits)  # 마스킹된 로짓
+        # print("probs: ", dist.probs)  # 확률 분포
+        # print("logits (dist 내부): ", dist.logits)  # distribution이 쓰는 로짓
+        # print("batch_shape: ", dist.batch_shape)  # 배치 차원
+
         if added:
             # 단일 샘플이면 배치 차원 제거
             action = action.squeeze(0)
@@ -256,21 +240,6 @@ class SetTransformerPolicy(nn.Module):
             else:                                  # [B,R]
                 out["mask"] = mk
 
-        # t
-        tt = obs.get("t")
-        if tt is not None:
-            if tt.dim() == 1:                     # [1] or [B] -> [B,1]
-                if tt.numel() == 1:               # scalar in tensor
-                    out["t"] = tt.view(1, 1)      # [1,1]
-                    added = True
-                else:
-                    out["t"] = tt.view(-1, 1)     # [B,1]
-            elif tt.dim() == 2:                   # [B,1] or [B,K]
-                out["t"] = tt[:, :1]              # keep first channel
-            else:                                  # [*,*,*] -> [B,1]
-                b = tt.size(0)
-                out["t"] = tt.view(b, -1)[:, :1]
-
         return out, added
 
 # -----------------------------
@@ -279,12 +248,12 @@ class SetTransformerPolicy(nn.Module):
 
 @dataclass
 class PPOConfig:
-    lr: float = 3e-4
-    gamma: float = 0.99
+    lr: float = 1e-4 # 3e-4
+    gamma: float = 0.98
     lam: float = 0.95
-    clip_eps: float = 0.2
+    clip_eps: float = 0.1 # 0.2
     vf_coef: float = 0.5
-    ent_coef: float = 0.01
+    ent_coef: float = 0.05 # 0.01
     max_grad_norm: float = 0.5
     update_epochs: int = 4
     minibatch_size: int = 64
@@ -323,6 +292,11 @@ class PPOAgent:
                 logits, value = self.net(obs_mb)
                 mask = obs_mb["mask"].to(torch.bool)
                 masked_logits = logits.masked_fill(~mask, float('-inf'))
+
+                all_invalid = (~mask).all(dim=-1)  # [MB]
+                if all_invalid.any():
+                    masked_logits = masked_logits.masked_fill(all_invalid.unsqueeze(1), float('-inf'))
+                    masked_logits[all_invalid, 0] = 0.0
                 dist = torch.distributions.Categorical(logits=masked_logits)
 
                 logp = dist.log_prob(act_mb)
@@ -370,10 +344,10 @@ def compute_gae(rewards, values, dones, gamma, lam):
 @dataclass
 class TrainConfig:
     seed: int = 0
-    total_updates: int = 200
-    rollout_steps: int = 1024   # steps per update
+    total_updates: int = 10000
+    rollout_steps: int = 100   # steps per update
     log_interval: int = 10
-    save_interval: int = 50
+    save_interval: int = 1000
     save_dir: str = "./checkpoints"
 
 def make_env(max_time_step=5, R_max=5, N=6, seed=0):
@@ -383,7 +357,7 @@ def make_env(max_time_step=5, R_max=5, N=6, seed=0):
         max_time_steps=max_time_step,               # longer episodes for training
         max_requests_per_step=R_max,
         auto_continue=True,
-        request_wait_episodes=1,
+        request_wait_episodes=3,
         seed=seed
     )
     return env
@@ -395,8 +369,10 @@ def train():
 
     # Build env and agent
     R_max = 10
-    env = make_env(R_max=R_max, N=14, seed=tcfg.seed)
+    max_time_step = R_max
+    env = make_env(max_time_step=max_time_step, R_max=R_max, N=14, seed=tcfg.seed)
     obs, info = env.reset()
+    prev_ep_idx = info.get("episode_idx", getattr(env, "episode_idx", 0))
 
     agent = PPOAgent(R_max, PPOConfig(device=device))
     os.makedirs(tcfg.save_dir, exist_ok=True)
@@ -404,14 +380,13 @@ def train():
     ep_returns = []
     global_step = 0
 
+    reward_hist = []  # update마다 평균 step reward (롤아웃 평균)
+    adv_hist = []  # update마다 평균 advantage
+    update_idx = []  # x축: update 번호
+
     for update in range(1, tcfg.total_updates + 1):
         # Storage
-        obs_buf = []
-        act_buf = []
-        logp_buf = []
-        val_buf = []
-        rew_buf = []
-        done_buf = []
+        obs_buf, act_buf, logp_buf, val_buf, rew_buf, done_buf = [], [], [], [], [], []
 
         # Rollout
         steps = 0
@@ -421,20 +396,25 @@ def train():
             # env expects scalar action
             a = int(act[0]) if np.ndim(act) > 0 else int(act)
             obs, reward, terminated, truncated, info = env.step(a)
+            cur_ep_idx = info.get("episode_idx", getattr(env, "episode_idx", prev_ep_idx))
+
+            # Check episode_idx
+            crossed = (cur_ep_idx != prev_ep_idx)
 
             act_buf.append(a)
             logp_buf.append(float(logp[0]) if np.ndim(logp) > 0 else float(logp))
             val_buf.append(float(val[0]) if np.ndim(val) > 0 else float(val))
             rew_buf.append(float(reward))
-            done = bool(terminated or truncated)  # with auto_continue, usually False
+            done = bool(terminated or truncated or crossed)
             done_buf.append(done)
 
+            prev_ep_idx = cur_ep_idx
             global_step += 1
             steps += 1
 
         # Bootstrap value for GAE (last obs)
         last_v = agent.net.forward(obs_to_tensors(obs, device))[1].detach().cpu().numpy().squeeze()
-        val_np = np.array(val_buf + [last_v], dtype=np.float32)
+        val_np = np.array(val_buf + [0.0 if done_buf[-1] else last_v], dtype=np.float32)
         rew_np = np.array(rew_buf, dtype=np.float32)
         done_np = np.array(done_buf, dtype=np.bool_)
 
@@ -450,12 +430,20 @@ def train():
         # PPO update
         agent.ppo_update(obs_t, act_t, old_logp_t, ret_t, adv_t)
 
+        # History save
+        avg_rew_this_update = float(np.mean(rew_np)) if rew_np.size else 0.0
+        avg_adv_this_update = float(np.mean(adv_np)) if adv_np.size else 0.0
+        reward_hist.append(avg_rew_this_update)
+        adv_hist.append(avg_adv_this_update)
+        update_idx.append(update)
+
         # Logging
         if update % tcfg.log_interval == 0:
             avg_rew = float(np.mean(rew_np)) if len(rew_np) > 0 else 0.0
             print(f"[Update {update:04d}] steps={global_step} avg_step_reward={avg_rew:.3f} "
                   f"adv_mean={adv_np.mean():.3f} ret_mean={ret_np.mean():.3f} "
-                  f"success_total={info.get('success_total', -1)} ep_idx={info.get('episode_idx', -1)}")
+                  f"success_total={info.get('success_total', -1)} blocking_total={info.get('blocking_total', -1)} "
+                  f"ep_idx={info.get('episode_idx', -1)}")
 
         # Save
         if update % tcfg.save_interval == 0:
@@ -477,6 +465,28 @@ def train():
         "global_step": global_step,
     }, ckpt_path)
     print(f"Training finished. Final checkpoint saved to {ckpt_path}")
+
+    # Plot graph
+    try:
+        fig, ax = plt.subplots(2, 1, figsize=(8, 6), sharex=True)
+        ax[0].plot(update_idx, reward_hist, label="avg step reward")
+        ax[0].set_ylabel("Avg Step Reward")
+        ax[0].grid(True, alpha=0.3)
+        ax[0].legend()
+
+        ax[1].plot(update_idx, adv_hist, label="adv mean")
+        ax[1].set_xlabel("Update")
+        ax[1].set_ylabel("Advantage Mean")
+        ax[1].grid(True, alpha=0.3)
+        ax[1].legend()
+
+        fig.tight_layout()
+        png_path = os.path.join(tcfg.save_dir, "reward_adv_curves.png")
+        fig.savefig(png_path, dpi=150)
+        plt.close(fig)
+        print(f"Saved curves to {png_path}")
+    except Exception as e:
+        print("Plotting failed:", e)
 
 
 if __name__ == "__main__":
