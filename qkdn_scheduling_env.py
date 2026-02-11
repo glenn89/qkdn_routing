@@ -254,6 +254,8 @@ class QKDNSchedulingEnv(gym.Env):
         """
         if self.N == 14:
             G = nx.from_numpy_array(np.array(topology_conf.nsfnet_topo["QKD_TOPOLOGY"]))
+        elif self.N == 28:
+            G = nx.from_numpy_array(np.array(topology_conf.cost266_topo["QKD_TOPOLOGY"]))
         else:
             G = nx.Graph()
             G.add_nodes_from(range(self.N))
@@ -537,6 +539,7 @@ if __name__ == "__main__":
         total_reward += r
         env.render()
         print("action:", a, "| dropped_wait_expired:", info.get("dropped_wait_expired"))
+        print("current requests: ", len(env.current_requests))
         print()
         if env.episode_idx - start_ep >= target_episodes:
             break

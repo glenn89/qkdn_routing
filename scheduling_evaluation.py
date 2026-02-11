@@ -1,6 +1,7 @@
 # eval_qkdn_ppo.py
 import os
 import numpy as np
+import pulp
 import torch
 
 from train_transformer_ppo import (
@@ -83,6 +84,113 @@ def _select_action_min_path(obs: dict) -> int:
     scored = np.where(mask, req[:, 2], np.inf)
     return int(np.argmin(scored))
 
+def _select_action_ilp(obs: dict) -> int:
+    """
+    1-step ILP(=MILP) oracle selector.
+    - Decision: choose at most one request among valid (mask==True)
+    - Feasibility proxy: min_keys_norm > 0  (from env: path bottleneck keys / key_pool_size)
+    - Objective: prioritize feasible + higher min_keys_norm + shorter hops + urgent TTL
+
+    Requires: pip install pulp
+    Uses PuLP's CBC solver if available; otherwise falls back to greedy.
+    """
+    mask = np.asarray(obs["mask"]).astype(bool)  # [R]
+    valid = np.flatnonzero(mask)
+    if valid.size == 0:
+        return 0
+
+    req = np.asarray(obs["requests"], dtype=np.float32)  # [R,5] per env
+    # columns per env:
+    # 0: src_norm, 1: dst_norm, 2: hops_norm, 3: min_keys_norm, 4: wait_left_norm
+    if req.ndim != 2 or req.shape[1] < 5:
+        # fallback: first valid
+        return int(valid[0])
+
+    hops = req[:, 2]
+    min_keys = req[:, 3]
+    wait = req[:, 4]
+
+    # Feasibility proxy: min_keys_norm > 0
+    feasible = (min_keys > 0.0) & mask
+    feasible_idx = np.flatnonzero(feasible)
+
+    # If nothing looks feasible, fall back to a safe heuristic (e.g., min-path among valid)
+    if feasible_idx.size == 0:
+        # Same as your min-path heuristic: argmin hops_norm among valid
+        scored = np.where(mask, hops, np.inf)
+        return int(np.argmin(scored))
+
+    # --- MILP: choose <= 1 among feasible requests ---
+    try:
+        import pulp
+    except Exception:
+        # PuLP not installed -> greedy fallback
+        # Score: prefer more min_keys, shorter hop, more urgent(wait high)
+        score = 10.0 * min_keys - 1.0 * hops + 0.5 * wait
+        score = np.where(feasible, score, -np.inf)
+        return int(np.argmax(score))
+
+    # Problem
+    prob = pulp.LpProblem("QKDN_1step_select", pulp.LpMaximize)
+
+    x = {}
+    for i in feasible_idx:
+        x[i] = pulp.LpVariable(f"x_{i}", lowBound=0, upBound=1, cat=pulp.LpBinary)
+
+    # at most one request
+    prob += pulp.lpSum([x[i] for i in feasible_idx]) <= 1
+
+    # Objective:
+    # Big reward for feasibility is already enforced by only allowing feasible_idx.
+    # Now optimize tie-breakers:
+    #   + min_keys_norm (prefer safer/bigger bottleneck)
+    #   - hops_norm (prefer shorter)
+    #   + wait_left_norm (prefer urgent)
+    #
+    # You can tune these weights.
+    W_KEYS = 10.0
+    W_HOPS = 1.0
+    W_WAIT = 0.5
+
+    prob += pulp.lpSum([
+        x[i] * (W_KEYS * float(min_keys[i]) - W_HOPS * float(hops[i]) + W_WAIT * float(wait[i]))
+        for i in feasible_idx
+    ])
+
+    # Solve (CBC if available)
+    try:
+        solver = pulp.PULP_CBC_CMD(msg=False, timeLimit=0.05)  # keep it fast per-step
+        prob.solve(solver)
+    except Exception:
+        # solver failed -> greedy fallback
+        score = 10.0 * min_keys - 1.0 * hops + 0.5 * wait
+        score = np.where(feasible, score, -np.inf)
+        return int(np.argmax(score))
+
+    # Extract chosen action
+    chosen = None
+    best_val = -1
+
+    for i in feasible_idx:
+        v = int(round(pulp.value(x[i]) or 0))
+        if v == 1:
+            chosen = int(i)
+            break
+        # fallback if solver returns fractional / none:
+        val = pulp.value(x[i])
+        if val is not None and val > best_val:
+            best_val = val
+            chosen = int(i)
+
+    if chosen is None:
+        # final fallback
+        scored = np.where(mask, hops, np.inf)
+        return int(np.argmin(scored))
+
+    return chosen
+
+
+
 # ---------- 메인 평가 루틴 ----------
 def evaluate_checkpoint(
     checkpoint_path: str,
@@ -90,7 +198,7 @@ def evaluate_checkpoint(
     episodes: int = 10,
     max_time_step=5,
     R_max: int = 5,
-    N: int = 6,
+    N: int = 14,
     seed: int = 0,
     device: str | torch.device = "cuda",
     use_random_policy: bool = False,
@@ -124,9 +232,10 @@ def evaluate_checkpoint(
         if use_random_policy and agent is not None:
             a = _select_action_argmax(agent, obs, device)
         else:
-            a = _select_action_random(obs)
+            # a = _select_action_random(obs)
             # a = _select_action_fifo(obs)
             # a = _select_action_min_path(obs)
+            a = _select_action_ilp(obs)
 
         prev_ep = cur_ep
         # print(a)
@@ -175,7 +284,7 @@ def evaluate_checkpoint(
 
 if __name__ == "__main__":
     # 예시 실행: 경로/파라미터를 프로젝트 설정에 맞게 바꾸세요
-    ckpt = "./checkpoints/setppo_update2000.pt"
+    ckpt = "./checkpoints/setppo_update99000.pt"
     if os.path.exists(ckpt):
         evaluate_checkpoint(
             ckpt,
@@ -185,7 +294,7 @@ if __name__ == "__main__":
             N=14,
             seed=0,
             device="cuda",
-            use_random_policy=False,  # 랜덤 정책 비교시 False
+            use_random_policy=True,  # 랜덤 정책 비교시 False
         )
     else:
         print("No checkpoint found at", ckpt)

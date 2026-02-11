@@ -344,7 +344,7 @@ def compute_gae(rewards, values, dones, gamma, lam):
 @dataclass
 class TrainConfig:
     seed: int = 0
-    total_updates: int = 10000
+    total_updates: int = 100000
     rollout_steps: int = 100   # steps per update
     log_interval: int = 10
     save_interval: int = 1000
@@ -370,7 +370,7 @@ def train():
     # Build env and agent
     R_max = 10
     max_time_step = R_max
-    env = make_env(max_time_step=max_time_step, R_max=R_max, N=14, seed=tcfg.seed)
+    env = make_env(max_time_step=max_time_step, R_max=R_max, N=28, seed=tcfg.seed)
     obs, info = env.reset()
     prev_ep_idx = info.get("episode_idx", getattr(env, "episode_idx", 0))
 
@@ -447,7 +447,7 @@ def train():
 
         # Save
         if update % tcfg.save_interval == 0:
-            ckpt_path = os.path.join(tcfg.save_dir, f"setppo_update{update:04d}.pt")
+            ckpt_path = os.path.join(tcfg.save_dir, f"cost266_setppo_update{update:04d}.pt")
             torch.save({
                 "model": agent.net.state_dict(),
                 "optimizer": agent.opt.state_dict(),
@@ -457,7 +457,7 @@ def train():
             print(f"Saved checkpoint to {ckpt_path}")
 
     # Final save
-    ckpt_path = os.path.join(tcfg.save_dir, f"setppo_final.pt")
+    ckpt_path = os.path.join(tcfg.save_dir, f"cost266_setppo_final.pt")
     torch.save({
         "model": agent.net.state_dict(),
         "optimizer": agent.opt.state_dict(),
@@ -481,7 +481,7 @@ def train():
         ax[1].legend()
 
         fig.tight_layout()
-        png_path = os.path.join(tcfg.save_dir, "reward_adv_curves.png")
+        png_path = os.path.join(tcfg.save_dir, "cost266_reward_adv_curves.png")
         fig.savefig(png_path, dpi=150)
         plt.close(fig)
         print(f"Saved curves to {png_path}")
