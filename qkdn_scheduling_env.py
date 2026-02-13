@@ -111,6 +111,8 @@ class QKDNSchedulingEnv(gym.Env):
         self.expired_keys_total = 0
         self.alpha_hop_weight = float(alpha_hop_weight)
         self.invalid_action_penalty = float(invalid_action_penalty)
+        self.pending_reward = 0.0
+        self.decision_in_slot = 0
 
         # Scheduling / backlog
         self.max_backlog = int(max_backlog)
@@ -174,6 +176,8 @@ class QKDNSchedulingEnv(gym.Env):
         self.time_step = 0
         self.total_success = 0
         self.total_blocking = 0
+        self.pending_reward = 0.0
+        self.decision_in_slot = 0
         self.temp_queue = []  # new episode starts with empty temp queue
         self.expired_keys_last = 0
 
@@ -206,29 +210,36 @@ class QKDNSchedulingEnv(gym.Env):
             req = self.current_requests[chosen_idx]
             served_success, path = self._serve_request(req)  # decrements ONE key per edge on success
             if served_success:
-                reward += 1.0
+                self.pending_reward += 1.0 - (0.5 * (req.wait_left / self.request_wait_episodes))
                 self.total_success += 1
                 del self.current_requests[chosen_idx]
                 path_len = float(len(path) - 1)
             else:
-                reward += -1.0
+                reward += 0.0
                 self.total_blocking += 1
                 path_len = 0.0
 
         # 2) Advance time and generate next batch of candidates (fresh only)
         self.time_step += 1
-        if self.time_step >= self.max_time_steps:
+        self.decision_in_slot += 1
+        if self.decision_in_slot >= self.max_time_steps:
             if self.current_requests:
                 self.temp_queue.extend(self.current_requests)
                 self.current_requests = []
                 # Episode end: age remaining keys and then generate new keys for the next episode
-            self._end_of_episode_housekeeping()
-            if self.auto_continue:
-                # Immediately start next episode; do not set terminated
-                self._start_next_episode()
-                terminated = False
-            else:
-                terminated = True
+
+            reward = self.pending_reward
+            self.pending_reward = 0.0
+
+            if self.time_step >= self.max_time_steps:
+                self._end_of_episode_housekeeping()
+
+                if self.auto_continue:
+                    # Immediately start next episode; do not set terminated
+                    self._start_next_episode()
+                    terminated = False
+                else:
+                    terminated = True
         else:
             pass
 
@@ -382,6 +393,7 @@ class QKDNSchedulingEnv(gym.Env):
         self.time_step = 0
         self.total_success = 0
         self.total_blocking = 0
+        self.decision_in_slot = 0
         # temp_queue should already be cleared in housekeeping; keep safety clear
         self.temp_queue = []
 
@@ -539,6 +551,7 @@ if __name__ == "__main__":
         total_reward += r
         env.render()
         print("action:", a, "| dropped_wait_expired:", info.get("dropped_wait_expired"))
+        print("reward:", r)
         print("current requests: ", len(env.current_requests))
         print()
         if env.episode_idx - start_ep >= target_episodes:

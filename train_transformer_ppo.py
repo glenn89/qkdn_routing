@@ -1,3 +1,4 @@
+import logging
 import os
 import time
 import math
@@ -344,7 +345,7 @@ def compute_gae(rewards, values, dones, gamma, lam):
 @dataclass
 class TrainConfig:
     seed: int = 0
-    total_updates: int = 100000
+    total_updates: int = 1000
     rollout_steps: int = 100   # steps per update
     log_interval: int = 10
     save_interval: int = 1000
@@ -368,9 +369,9 @@ def train():
     set_seed(tcfg.seed)
 
     # Build env and agent
-    R_max = 10
+    R_max = 5
     max_time_step = R_max
-    env = make_env(max_time_step=max_time_step, R_max=R_max, N=28, seed=tcfg.seed)
+    env = make_env(max_time_step=max_time_step, R_max=R_max, N=14, seed=tcfg.seed)
     obs, info = env.reset()
     prev_ep_idx = info.get("episode_idx", getattr(env, "episode_idx", 0))
 
@@ -381,6 +382,7 @@ def train():
     global_step = 0
 
     reward_hist = []  # update마다 평균 step reward (롤아웃 평균)
+    raw_reward = []
     adv_hist = []  # update마다 평균 advantage
     update_idx = []  # x축: update 번호
 
@@ -436,6 +438,7 @@ def train():
         reward_hist.append(avg_rew_this_update)
         adv_hist.append(avg_adv_this_update)
         update_idx.append(update)
+        raw_reward.append(rew_buf)
 
         # Logging
         if update % tcfg.log_interval == 0:
@@ -457,7 +460,7 @@ def train():
             print(f"Saved checkpoint to {ckpt_path}")
 
     # Final save
-    ckpt_path = os.path.join(tcfg.save_dir, f"cost266_setppo_final.pt")
+    ckpt_path = os.path.join(tcfg.save_dir, f"NSFNET_setppo_final.pt")
     torch.save({
         "model": agent.net.state_dict(),
         "optimizer": agent.opt.state_dict(),
@@ -465,6 +468,16 @@ def train():
         "global_step": global_step,
     }, ckpt_path)
     print(f"Training finished. Final checkpoint saved to {ckpt_path}")
+
+    # 로그 설정
+    logging.basicConfig(
+        filename='NSFNET_reward.log',
+        level=logging.INFO,
+        format='%(asctime)s - %(message)s'
+    )
+    # 로그로 저장
+    for item in raw_reward:
+        logging.info(item)
 
     # Plot graph
     try:
@@ -481,7 +494,7 @@ def train():
         ax[1].legend()
 
         fig.tight_layout()
-        png_path = os.path.join(tcfg.save_dir, "cost266_reward_adv_curves.png")
+        png_path = os.path.join(tcfg.save_dir, "NSFNET_reward_adv_curves.png")
         fig.savefig(png_path, dpi=150)
         plt.close(fig)
         print(f"Saved curves to {png_path}")
