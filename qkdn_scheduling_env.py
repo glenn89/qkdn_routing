@@ -210,7 +210,7 @@ class QKDNSchedulingEnv(gym.Env):
             req = self.current_requests[chosen_idx]
             served_success, path = self._serve_request(req)  # decrements ONE key per edge on success
             if served_success:
-                self.pending_reward += 1.0 - (0.5 * (req.wait_left / self.request_wait_episodes))
+                self.pending_reward += 1.0 - (0.0 * (req.wait_left / self.request_wait_episodes))
                 self.total_success += 1
                 del self.current_requests[chosen_idx]
                 path_len = float(len(path) - 1)

@@ -1,6 +1,7 @@
 # eval_qkdn_ppo.py
 import os
 import numpy as np
+import pandas as pd
 import pulp
 import torch
 
@@ -233,9 +234,9 @@ def evaluate_checkpoint(
             a = _select_action_argmax(agent, obs, device)
         else:
             # a = _select_action_random(obs)
-            # a = _select_action_fifo(obs)
+            a = _select_action_fifo(obs)
             # a = _select_action_min_path(obs)
-            a = _select_action_ilp(obs)
+            # a = _select_action_ilp(obs)
 
         prev_ep = cur_ep
         # print(a)
@@ -273,9 +274,13 @@ def evaluate_checkpoint(
         "episodes": float(episodes),
         "avg_reward": float(rewards_np.mean() if rewards_np.size else 0.0),
         "std_reward": float(rewards_np.std() if rewards_np.size > 1 else 0.0),
-        "total_expired key": int(info.get("expired_keys_total")),
+        "total_expired_requests": int(info.get("dropped_wait_expired")),
+        "total_expired_keys": int(info.get("expired_keys_total")),
         "device": str(device),
     }
+    df = pd.DataFrame(rewards_np, columns=["reward"])
+    df.to_csv("RL_05_reward_log.csv", index=False)
+
     print("===== Evaluation Summary =====")
     for k, v in stats.items():
         print(f"{k}: {v}")
@@ -284,17 +289,17 @@ def evaluate_checkpoint(
 
 if __name__ == "__main__":
     # 예시 실행: 경로/파라미터를 프로젝트 설정에 맞게 바꾸세요
-    ckpt = "./checkpoints/setppo_update99000.pt"
+    ckpt = "./checkpoints/cost266_setppo_update99000.pt"
     if os.path.exists(ckpt):
         evaluate_checkpoint(
             ckpt,
-            episodes=100,
+            episodes=200,
             max_time_step=10,
             R_max=10,
-            N=14,
+            N=28,
             seed=0,
             device="cuda",
-            use_random_policy=True,  # 랜덤 정책 비교시 False
+            use_random_policy=False  # 랜덤 정책 비교시 False
         )
     else:
         print("No checkpoint found at", ckpt)
