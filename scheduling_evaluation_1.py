@@ -280,19 +280,19 @@ def evaluate_checkpoint(
         "total_consumed_keys": int(info.get("total_consumed_keys")),
     }
     df = pd.DataFrame(rewards_np, columns=["reward"])
-    df.to_csv("results/RL_05_reward_log_4.csv", index=False)
+    df.to_csv("results/Minpath_reward_log_1.csv", index=False)
 
     rows = []
     for (src, dst), keys in env.key_pool_consume.items():
         rows.append([src, dst, keys])
     df_1 = pd.DataFrame(rows, columns=["src", "dst", "success"])
-    df_1.to_csv("results/RL_05_links_consumed_keys_4.csv", index=False)
+    df_1.to_csv("results/Minpath_links_consumed_keys_1.csv", index=False)
 
     rows = []
     for (src, dst), requests in env.served_requests.items():
         rows.append([src, dst, requests['generated'], requests['success']])
     df_2 = pd.DataFrame(rows, columns=["src", "dst", "generated", "served"])
-    df_2.to_csv("results/RL_05_served_requests_4.csv", index=False)
+    df_2.to_csv("results/Minpath_served_requests_1.csv", index=False)
 
     print("===== Evaluation Summary =====")
     for k, v in stats.items():
@@ -309,10 +309,10 @@ if __name__ == "__main__":
             episodes=10_000,
             max_time_step=10,
             R_max=20,
-            N=28,
-            seed=3,
+            N=14,
+            seed=0,
             device="cuda",
-            use_random_policy=True  # 랜덤 정책 비교시 False
+            use_random_policy=False  # 랜덤 정책 비교시 False
         )
     else:
         print("No checkpoint found at", ckpt)
