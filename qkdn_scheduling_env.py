@@ -1,4 +1,5 @@
 import random
+from itertools import permutations
 
 import gymnasium as gym
 from gymnasium import spaces
@@ -107,6 +108,8 @@ class QKDNSchedulingEnv(gym.Env):
         self.initial_key_lifetime = int(initial_key_lifetime)
         self.generate_key_size = int(generate_key_size)
         self.key_gen_noise_std = float(key_gen_noise_std)
+        self.total_generation_keys = 0
+        self.total_consumed_keys = 0
         self.expired_keys_last = 0
         self.expired_keys_total = 0
         self.alpha_hop_weight = float(alpha_hop_weight)
@@ -130,9 +133,13 @@ class QKDNSchedulingEnv(gym.Env):
 
         # Key pool: dict[(u,v)] -> list[int lifetimes]
         self.key_pool = {}
+        self.key_pool_consume = {}
         for u, v in self.G.edges():
             e = self._ekey(u, v)
             self.key_pool[e] = []
+            self.key_pool_consume[e] = 0
+
+        self.served_requests = None
 
         # Observation/Action spaces
         self.observation_space = spaces.Dict(
@@ -165,12 +172,25 @@ class QKDNSchedulingEnv(gym.Env):
         if seed is not None:
             self._rng = np.random.default_rng(seed)
 
+        self.expired_keys_last = 0
+        self.expired_keys_total = 0
+        self.total_generation_keys = 0
+        self.total_consumed_keys = 0
+
         # Keys persist across episodes; warmup only once (first reset)
         if self._is_first_reset:
             for e in list(self.key_pool.keys()):
                 self.key_pool[e] = []
+                self.key_pool_consume[e] = 0
             self._warmup_keys()
             self._is_first_reset = False
+
+            self.served_requests = {}
+            for src, dst in permutations(self.G.nodes(), 2):
+                self.served_requests[(src, dst)] = {
+                    "generated": 0,
+                    "success": 0
+                }
 
         # Reset episode runtime stats
         self.time_step = 0
@@ -179,7 +199,6 @@ class QKDNSchedulingEnv(gym.Env):
         self.pending_reward = 0.0
         self.decision_in_slot = 0
         self.temp_queue = []  # new episode starts with empty temp queue
-        self.expired_keys_last = 0
 
         # Prepare initial requests from carryover first, then fill with fresh generation
         self._start_next_episode()  # uses carryover first then fresh
@@ -253,6 +272,8 @@ class QKDNSchedulingEnv(gym.Env):
             "path_length": path_len,
             "expired_keys_last_episode": self.expired_keys_last,
             "expired_keys_total": self.expired_keys_total,
+            "total_generation_keys": self.total_generation_keys,
+            "total_consumed_keys": self.total_consumed_keys,
         }
         return obs, reward, terminated, truncated, info
 
@@ -288,6 +309,7 @@ class QKDNSchedulingEnv(gym.Env):
                     if u != v and not G.has_edge(u, v):
                         G.add_edge(int(u), int(v))
                         added += 1
+
         return G
 
     def _ekey(self, u: int, v: int):
@@ -300,6 +322,7 @@ class QKDNSchedulingEnv(gym.Env):
             e = self._ekey(u, v)
             init_k = self._rng.integers(low=0, high=min(8, self.key_pool_size))
             self.key_pool[e] = [self.initial_key_lifetime] * int(init_k)
+            self.total_generation_keys += init_k
 
     def _generate_keys_episode(self):
         """Generate new keys for the *next* episode."""
@@ -314,6 +337,7 @@ class QKDNSchedulingEnv(gym.Env):
                 continue
             to_add = min(space, gen)
             self.key_pool[e].extend([self.initial_key_lifetime] * to_add)
+            self.total_generation_keys += to_add
 
     def _end_of_episode_housekeeping(self):
         """
@@ -454,10 +478,17 @@ class QKDNSchedulingEnv(gym.Env):
             if len(self.key_pool[e]) < 1:
                 return False, path
         # Consume exactly ONE key per edge (oldest-first)
+        consumed_keys = 0
         for i in range(len(path) - 1):
             e = self._ekey(path[i], path[i + 1])
             if self.key_pool[e]:
                 del self.key_pool[e][0]
+                consumed_keys += 1
+                self.key_pool_consume[e] += 1
+        self.total_consumed_keys += consumed_keys
+
+        self.served_requests[(req.src, req.dst)]['success'] += 1
+
         return True, path
 
     def _generate_requests(self, t: int, limit: int | None = None):
@@ -473,11 +504,13 @@ class QKDNSchedulingEnv(gym.Env):
             dst = int(ju[k])
             # Assign episode TTL
             reqs.append(Request(src, dst, req_id=(t * 1000 + ridx), arrival_t=t, wait_left=self.request_wait_episodes))
+            self.served_requests[(src, dst)]['generated'] += 1
         # Decide count
         if self.fixed_requests_per_step:
             n_valid = Rmax
         else:
             n_valid = int(self._rng.integers(low=1, high=min(Rmax, len(reqs)) + 1))
+
         return reqs[:n_valid]
 
     def _request_mask(self):

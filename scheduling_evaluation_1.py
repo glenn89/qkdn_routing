@@ -234,8 +234,8 @@ def evaluate_checkpoint(
             a = _select_action_argmax(agent, obs, device)
         else:
             # a = _select_action_random(obs)
-            a = _select_action_fifo(obs)
-            # a = _select_action_min_path(obs)
+            # a = _select_action_fifo(obs)
+            a = _select_action_min_path(obs)
             # a = _select_action_ilp(obs)
 
         prev_ep = cur_ep
@@ -248,9 +248,9 @@ def evaluate_checkpoint(
         # 로컬 집계: r>0이면 성공, 아니면 블로킹으로 셈
         ep_reward += float(r)
         if r > 0:
-            ep_success += 1
+            ep_success += int(round(ep_reward))
         else:
-            ep_blocking += 1
+            ep_blocking += max_time_step - int(round(ep_reward))
         expired_key = info.get("expired_keys_last_episode")
 
         # 에피소드 경계 감지: episode_idx가 바뀌면 이전 에피소드 종료
@@ -276,10 +276,23 @@ def evaluate_checkpoint(
         "std_reward": float(rewards_np.std() if rewards_np.size > 1 else 0.0),
         "total_expired_requests": int(info.get("dropped_wait_expired")),
         "total_expired_keys": int(info.get("expired_keys_total")),
-        "device": str(device),
+        "total_generation_keys": int(info.get("total_generation_keys")),
+        "total_consumed_keys": int(info.get("total_consumed_keys")),
     }
     df = pd.DataFrame(rewards_np, columns=["reward"])
-    df.to_csv("RL_05_reward_log.csv", index=False)
+    df.to_csv("results/RL_05_reward_log_4.csv", index=False)
+
+    rows = []
+    for (src, dst), keys in env.key_pool_consume.items():
+        rows.append([src, dst, keys])
+    df_1 = pd.DataFrame(rows, columns=["src", "dst", "success"])
+    df_1.to_csv("results/RL_05_links_consumed_keys_4.csv", index=False)
+
+    rows = []
+    for (src, dst), requests in env.served_requests.items():
+        rows.append([src, dst, requests['generated'], requests['success']])
+    df_2 = pd.DataFrame(rows, columns=["src", "dst", "generated", "served"])
+    df_2.to_csv("results/RL_05_served_requests_4.csv", index=False)
 
     print("===== Evaluation Summary =====")
     for k, v in stats.items():
@@ -289,17 +302,17 @@ def evaluate_checkpoint(
 
 if __name__ == "__main__":
     # 예시 실행: 경로/파라미터를 프로젝트 설정에 맞게 바꾸세요
-    ckpt = "./checkpoints/cost266_setppo_update99000.pt"
+    ckpt = "./checkpoints/COST266_setppo_update97000.pt"  # 100000 97000 96000 88000 95000(random)
     if os.path.exists(ckpt):
         evaluate_checkpoint(
             ckpt,
-            episodes=200,
+            episodes=10_000,
             max_time_step=10,
-            R_max=10,
+            R_max=20,
             N=28,
-            seed=0,
+            seed=3,
             device="cuda",
-            use_random_policy=False  # 랜덤 정책 비교시 False
+            use_random_policy=True  # 랜덤 정책 비교시 False
         )
     else:
         print("No checkpoint found at", ckpt)
