@@ -250,7 +250,7 @@ def evaluate_checkpoint(
         if r > 0:
             ep_success += int(round(ep_reward))
         else:
-            ep_blocking += max_time_step - int(round(ep_reward))
+            ep_blocking += R_max - int(round(ep_reward))
         expired_key = info.get("expired_keys_last_episode")
 
         # 에피소드 경계 감지: episode_idx가 바뀌면 이전 에피소드 종료
@@ -279,6 +279,24 @@ def evaluate_checkpoint(
         "total_generation_keys": int(info.get("total_generation_keys")),
         "total_consumed_keys": int(info.get("total_consumed_keys")),
     }
+
+    # -------- Success rate 계산 --------
+    total_generated_requests = 0
+    total_served_requests = 0
+
+    for (src, dst), requests in env.served_requests.items():
+        total_generated_requests += requests["generated"]
+        total_served_requests += requests["success"]
+
+    success_rate = (
+        total_served_requests / total_generated_requests
+        if total_generated_requests > 0 else 0
+    )
+
+    stats["total_generated_requests"] = int(total_generated_requests)
+    stats["total_served_requests"] = int(total_served_requests)
+    stats["success_rate"] = float(success_rate)
+
     df = pd.DataFrame(rewards_np, columns=["reward"])
     df.to_csv("results/Minpath_reward_log_1.csv", index=False)
 
@@ -297,22 +315,24 @@ def evaluate_checkpoint(
     print("===== Evaluation Summary =====")
     for k, v in stats.items():
         print(f"{k}: {v}")
+    print("R_max: ", R_max)
     return stats
 
 
 if __name__ == "__main__":
     # 예시 실행: 경로/파라미터를 프로젝트 설정에 맞게 바꾸세요
-    ckpt = "./checkpoints/COST266_setppo_update97000.pt"  # 100000 97000 96000 88000 95000(random)
-    if os.path.exists(ckpt):
-        evaluate_checkpoint(
-            ckpt,
-            episodes=10_000,
-            max_time_step=10,
-            R_max=20,
-            N=14,
-            seed=0,
-            device="cuda",
-            use_random_policy=False  # 랜덤 정책 비교시 False
-        )
-    else:
-        print("No checkpoint found at", ckpt)
+    for q in range(5, 16):
+        ckpt = "./checkpoints/COST266_setppo_update99000.pt"  # 100000 97000 96000 88000 95000(random)
+        if os.path.exists(ckpt):
+            evaluate_checkpoint(
+                ckpt,
+                episodes=1_000,
+                max_time_step=q,
+                R_max=q,
+                N=28,
+                seed=0,
+                device="cuda",
+                use_random_policy=True  # 랜덤 정책 비교시 False
+            )
+        else:
+            print("No checkpoint found at", ckpt)

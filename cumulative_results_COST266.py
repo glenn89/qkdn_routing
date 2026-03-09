@@ -83,30 +83,32 @@ for name, files in groups.items():
 
     # Overall Graph
     x = np.arange(len(mean))
-    axes.fill_between(x, mean - ci, mean + ci, alpha=0.20, linewidth=0)  # 음영
-    axes.plot(x, mean, linewidth=2.2, label=name)  # 평균 선
+    # axes.fill_between(x, mean - ci, mean + ci, alpha=0.20, linewidth=0)  # 음영
+    # axes.plot(x, mean, linewidth=2.2, label=name)  # 평균 선
 
     # # Zoomed Graph(Top 20%)
-    # start = int(len(mean) * 0.8)
-    # axes.fill_between(
-    #     x[start:],
-    #     mean[start:] - ci[start:],
-    #     mean[start:] + ci[start:],
-    #     alpha=0.2
-    # )
-    # axes.plot(x[start:], mean[start:], label=name)
-
-axes.set_xlabel("Time slot", fontsize=15)
-axes.set_ylabel("Total Served Requests", fontsize=15)
-axes.tick_params(labelsize=15)
-axes.legend(fontsize=14)
-axes.grid(alpha=0.25)
+    start = int(len(mean) * 0.8)
+    axes.fill_between(
+        x[start:],
+        mean[start:] - ci[start:],
+        mean[start:] + ci[start:],
+        alpha=0.2
+    )
+    axes.plot(x[start:], mean[start:], label=name)
 
 # axes.set_xlabel("Time slot", fontsize=15)
 # axes.set_ylabel("Total Served Requests", fontsize=15)
+# axes.set_title("Overall comparison experiment on COST266", fontsize=15)
 # axes.tick_params(labelsize=15)
 # axes.legend(fontsize=14)
 # axes.grid(alpha=0.25)
+
+axes.set_xlabel("Time slot", fontsize=15)
+axes.set_ylabel("Total Served Requests", fontsize=15)
+axes.set_title("Focus on the final 2,000 time slots on COST266", fontsize=15)
+axes.tick_params(labelsize=15)
+axes.legend(fontsize=14)
+axes.grid(alpha=0.25)
 
 plt.tight_layout()
 plt.show()
