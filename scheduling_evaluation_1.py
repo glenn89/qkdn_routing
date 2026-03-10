@@ -298,19 +298,19 @@ def evaluate_checkpoint(
     stats["success_rate"] = float(success_rate)
 
     df = pd.DataFrame(rewards_np, columns=["reward"])
-    df.to_csv("results/Minpath_reward_log_1.csv", index=False)
+    df.to_csv("results/RL_05_reward_log_0.csv", index=False)
 
     rows = []
     for (src, dst), keys in env.key_pool_consume.items():
         rows.append([src, dst, keys])
     df_1 = pd.DataFrame(rows, columns=["src", "dst", "success"])
-    df_1.to_csv("results/Minpath_links_consumed_keys_1.csv", index=False)
+    df_1.to_csv("results/RL_05_links_consumed_keys_0.csv", index=False)
 
     rows = []
     for (src, dst), requests in env.served_requests.items():
         rows.append([src, dst, requests['generated'], requests['success']])
     df_2 = pd.DataFrame(rows, columns=["src", "dst", "generated", "served"])
-    df_2.to_csv("results/Minpath_served_requests_1.csv", index=False)
+    df_2.to_csv("results/RL_05_served_requests_0.csv", index=False)
 
     print("===== Evaluation Summary =====")
     for k, v in stats.items():
@@ -321,18 +321,17 @@ def evaluate_checkpoint(
 
 if __name__ == "__main__":
     # 예시 실행: 경로/파라미터를 프로젝트 설정에 맞게 바꾸세요
-    for q in range(5, 16):
-        ckpt = "./checkpoints/COST266_setppo_update99000.pt"  # 100000 97000 96000 88000 95000(random)
-        if os.path.exists(ckpt):
-            evaluate_checkpoint(
-                ckpt,
-                episodes=1_000,
-                max_time_step=q,
-                R_max=q,
-                N=28,
-                seed=0,
-                device="cuda",
-                use_random_policy=True  # 랜덤 정책 비교시 False
-            )
-        else:
-            print("No checkpoint found at", ckpt)
+    ckpt = "./checkpoints/COST266_setppo_update97000.pt"  # 100000 97000 96000 88000 95000(random)
+    if os.path.exists(ckpt):
+        evaluate_checkpoint(
+            ckpt,
+            episodes=10_000,
+            max_time_step=15,
+            R_max=15,
+            N=28,
+            seed=0,
+            device="cuda",
+            use_random_policy=True  # 랜덤 정책 비교시 False
+        )
+    else:
+        print("No checkpoint found at", ckpt)

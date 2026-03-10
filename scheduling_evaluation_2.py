@@ -233,9 +233,9 @@ def evaluate_checkpoint(
         if use_random_policy and agent is not None:
             a = _select_action_argmax(agent, obs, device)
         else:
-            # a = _select_action_random(obs)
+            a = _select_action_random(obs)
             # a = _select_action_fifo(obs)
-            a = _select_action_min_path(obs)
+            # a = _select_action_min_path(obs)
             # a = _select_action_ilp(obs)
 
         prev_ep = cur_ep
@@ -280,19 +280,19 @@ def evaluate_checkpoint(
         "total_consumed_keys": int(info.get("total_consumed_keys")),
     }
     df = pd.DataFrame(rewards_np, columns=["reward"])
-    df.to_csv("results/Minpath_reward_log_2.csv", index=False)
+    df.to_csv("results/RL_10_reward_log_0.csv", index=False)
 
     rows = []
     for (src, dst), keys in env.key_pool_consume.items():
         rows.append([src, dst, keys])
     df_1 = pd.DataFrame(rows, columns=["src", "dst", "success"])
-    df_1.to_csv("results/Minpath_links_consumed_keys_2.csv", index=False)
+    df_1.to_csv("results/RL_10_links_consumed_keys_0.csv", index=False)
 
     rows = []
     for (src, dst), requests in env.served_requests.items():
         rows.append([src, dst, requests['generated'], requests['success']])
     df_2 = pd.DataFrame(rows, columns=["src", "dst", "generated", "served"])
-    df_2.to_csv("results/Minpath_served_requests_2.csv", index=False)
+    df_2.to_csv("results/RL_10_served_requests_0.csv", index=False)
 
     print("===== Evaluation Summary =====")
     for k, v in stats.items():
@@ -307,10 +307,10 @@ if __name__ == "__main__":
         evaluate_checkpoint(
             ckpt,
             episodes=10_000,
-            max_time_step=10,
-            R_max=10,
-            N=14,
-            seed=1,
+            max_time_step=15,
+            R_max=15,
+            N=28,
+            seed=0,
             device="cuda",
             use_random_policy=False  # 랜덤 정책 비교시 False
         )

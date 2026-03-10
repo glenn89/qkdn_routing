@@ -1,3 +1,4 @@
+import math
 import random
 from itertools import permutations
 
@@ -5,6 +6,8 @@ import gymnasium as gym
 from gymnasium import spaces
 import numpy as np
 import networkx as nx
+from matplotlib import pyplot as plt
+
 import topology_conf
 
 
@@ -290,26 +293,41 @@ class QKDNSchedulingEnv(gym.Env):
             G = nx.from_numpy_array(np.array(topology_conf.cost266_topo["QKD_TOPOLOGY"]))
         else:
             G = nx.Graph()
+
+            # add nodes
             G.add_nodes_from(range(self.N))
 
-            if "EDGES" in topo:
-                for (u, v) in topo["EDGES"]:
-                    if u == v:
-                        continue
-                    G.add_edge(int(u), int(v))
-            else:
-                # build a simple ring + some chords for connectivity
-                for i in range(self.N):
-                    G.add_edge(i, (i + 1) % self.N)
-                # add random chords
-                m = max(1, self.N // 3)
-                added = 0
-                while added < m:
-                    u, v = self._rng.integers(0, self.N, size=2)
-                    if u != v and not G.has_edge(u, v):
-                        G.add_edge(int(u), int(v))
-                        added += 1
+            # determine grid size
+            rows = int(math.floor(math.sqrt(self.N)))
+            cols = int(math.ceil(self.N / rows))
 
+            node_id = 0
+            grid = {}
+
+            # assign nodes to grid
+            for r in range(rows):
+                for c in range(cols):
+                    if node_id >= self.N:
+                        break
+                    grid[(r, c)] = node_id
+                    node_id += 1
+
+            # add grid edges
+            for (r, c), u in grid.items():
+
+                # right neighbor
+                if (r, c + 1) in grid:
+                    v = grid[(r, c + 1)]
+                    G.add_edge(u, v)
+
+                # down neighbor
+                if (r + 1, c) in grid:
+                    v = grid[(r + 1, c)]
+                    G.add_edge(u, v)
+
+        # pos = nx.spring_layout(G, seed=42)
+        # nx.draw(G, pos, with_labels=True)
+        # plt.show()
         return G
 
     def _ekey(self, u: int, v: int):

@@ -369,9 +369,9 @@ def train():
     set_seed(tcfg.seed)
 
     # Build env and agent
-    R_max = 5
+    R_max = 10
     max_time_step = R_max
-    env = make_env(max_time_step=max_time_step, R_max=R_max, N=14, seed=tcfg.seed)
+    env = make_env(max_time_step=max_time_step, R_max=R_max, N=9, seed=tcfg.seed)
     obs, info = env.reset()
     prev_ep_idx = info.get("episode_idx", getattr(env, "episode_idx", 0))
 

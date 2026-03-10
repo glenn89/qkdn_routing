@@ -61,6 +61,7 @@ plt.plot(candidate, FIFO, marker='o', label="FIFO")
 
 plt.xlabel("Candidate Request Size", fontsize=15)
 plt.ylabel("Success Rate", fontsize=15)
+plt.title("Success Rate vs Candidate Request Size (NSFNET)", fontsize=15)
 plt.xticks(candidate, fontsize=15)
 plt.yticks(fontsize=15)
 plt.grid(True, alpha=0.3)
