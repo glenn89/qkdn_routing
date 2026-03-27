@@ -158,9 +158,9 @@ class SetTransformerPolicy(nn.Module):
     def forward(self, obs: Dict[str, torch.Tensor]):
         obs, added = self._ensure_batch(obs)
 
-        num_key  = obs["num_key"]     # [B,N,N]
+        num_key = obs["num_key"]     # [B,N,N]
         requests = obs["requests"]    # [B,R,5]
-        B, R, _  = requests.shape
+        B, R, _ = requests.shape
         assert R == self.R_max
 
         g = self.global_enc(num_key)          # [B,dg]  # <- t 제거
@@ -345,7 +345,7 @@ def compute_gae(rewards, values, dones, gamma, lam):
 @dataclass
 class TrainConfig:
     seed: int = 0
-    total_updates: int = 1000
+    total_updates: int = 10_000
     rollout_steps: int = 100   # steps per update
     log_interval: int = 10
     save_interval: int = 1000
@@ -369,9 +369,9 @@ def train():
     set_seed(tcfg.seed)
 
     # Build env and agent
-    R_max = 10
+    R_max = 50
     max_time_step = R_max
-    env = make_env(max_time_step=max_time_step, R_max=R_max, N=9, seed=tcfg.seed)
+    env = make_env(max_time_step=max_time_step, R_max=R_max, N=6, seed=tcfg.seed)
     obs, info = env.reset()
     prev_ep_idx = info.get("episode_idx", getattr(env, "episode_idx", 0))
 
@@ -450,7 +450,7 @@ def train():
 
         # Save
         if update % tcfg.save_interval == 0:
-            ckpt_path = os.path.join(tcfg.save_dir, f"cost266_setppo_update{update:04d}.pt")
+            ckpt_path = os.path.join(tcfg.save_dir, f"grid6_setppo_update{update:04d}.pt")
             torch.save({
                 "model": agent.net.state_dict(),
                 "optimizer": agent.opt.state_dict(),
@@ -460,7 +460,7 @@ def train():
             print(f"Saved checkpoint to {ckpt_path}")
 
     # Final save
-    ckpt_path = os.path.join(tcfg.save_dir, f"NSFNET_setppo_final.pt")
+    ckpt_path = os.path.join(tcfg.save_dir, f"grid6_setppo_final.pt")
     torch.save({
         "model": agent.net.state_dict(),
         "optimizer": agent.opt.state_dict(),
@@ -471,7 +471,7 @@ def train():
 
     # 로그 설정
     logging.basicConfig(
-        filename='NSFNET_reward.log',
+        filename='Grid6_reward.log',
         level=logging.INFO,
         format='%(asctime)s - %(message)s'
     )
@@ -494,7 +494,7 @@ def train():
         ax[1].legend()
 
         fig.tight_layout()
-        png_path = os.path.join(tcfg.save_dir, "NSFNET_reward_adv_curves.png")
+        png_path = os.path.join(tcfg.save_dir, "grid6_reward_adv_curves.png")
         fig.savefig(png_path, dpi=150)
         plt.close(fig)
         print(f"Saved curves to {png_path}")

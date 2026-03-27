@@ -1,6 +1,6 @@
 import math
 import random
-from itertools import permutations
+from itertools import permutations, combinations
 
 import gymnasium as gym
 from gymnasium import spaces
@@ -97,7 +97,7 @@ class QKDNSchedulingEnv(gym.Env):
         fixed_requests_per_step: bool = True,
         backlog_drop_policy: str = 'drop_oldest',
         auto_continue: bool = True,
-        request_wait_episodes: int = 3,
+        request_wait_episodes: int = 5,
         seed: int = 42,
     ):
         super().__init__()
@@ -189,7 +189,7 @@ class QKDNSchedulingEnv(gym.Env):
             self._is_first_reset = False
 
             self.served_requests = {}
-            for src, dst in permutations(self.G.nodes(), 2):
+            for src, dst in combinations(self.G.nodes(), 2):
                 self.served_requests[(src, dst)] = {
                     "generated": 0,
                     "success": 0

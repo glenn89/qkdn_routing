@@ -2,7 +2,7 @@
 import os
 import numpy as np
 import pandas as pd
-import pulp
+# import pulp
 import torch
 
 from train_transformer_ppo import (
@@ -85,113 +85,6 @@ def _select_action_min_path(obs: dict) -> int:
     scored = np.where(mask, req[:, 2], np.inf)
     return int(np.argmin(scored))
 
-def _select_action_ilp(obs: dict) -> int:
-    """
-    1-step ILP(=MILP) oracle selector.
-    - Decision: choose at most one request among valid (mask==True)
-    - Feasibility proxy: min_keys_norm > 0  (from env: path bottleneck keys / key_pool_size)
-    - Objective: prioritize feasible + higher min_keys_norm + shorter hops + urgent TTL
-
-    Requires: pip install pulp
-    Uses PuLP's CBC solver if available; otherwise falls back to greedy.
-    """
-    mask = np.asarray(obs["mask"]).astype(bool)  # [R]
-    valid = np.flatnonzero(mask)
-    if valid.size == 0:
-        return 0
-
-    req = np.asarray(obs["requests"], dtype=np.float32)  # [R,5] per env
-    # columns per env:
-    # 0: src_norm, 1: dst_norm, 2: hops_norm, 3: min_keys_norm, 4: wait_left_norm
-    if req.ndim != 2 or req.shape[1] < 5:
-        # fallback: first valid
-        return int(valid[0])
-
-    hops = req[:, 2]
-    min_keys = req[:, 3]
-    wait = req[:, 4]
-
-    # Feasibility proxy: min_keys_norm > 0
-    feasible = (min_keys > 0.0) & mask
-    feasible_idx = np.flatnonzero(feasible)
-
-    # If nothing looks feasible, fall back to a safe heuristic (e.g., min-path among valid)
-    if feasible_idx.size == 0:
-        # Same as your min-path heuristic: argmin hops_norm among valid
-        scored = np.where(mask, hops, np.inf)
-        return int(np.argmin(scored))
-
-    # --- MILP: choose <= 1 among feasible requests ---
-    try:
-        import pulp
-    except Exception:
-        # PuLP not installed -> greedy fallback
-        # Score: prefer more min_keys, shorter hop, more urgent(wait high)
-        score = 10.0 * min_keys - 1.0 * hops + 0.5 * wait
-        score = np.where(feasible, score, -np.inf)
-        return int(np.argmax(score))
-
-    # Problem
-    prob = pulp.LpProblem("QKDN_1step_select", pulp.LpMaximize)
-
-    x = {}
-    for i in feasible_idx:
-        x[i] = pulp.LpVariable(f"x_{i}", lowBound=0, upBound=1, cat=pulp.LpBinary)
-
-    # at most one request
-    prob += pulp.lpSum([x[i] for i in feasible_idx]) <= 1
-
-    # Objective:
-    # Big reward for feasibility is already enforced by only allowing feasible_idx.
-    # Now optimize tie-breakers:
-    #   + min_keys_norm (prefer safer/bigger bottleneck)
-    #   - hops_norm (prefer shorter)
-    #   + wait_left_norm (prefer urgent)
-    #
-    # You can tune these weights.
-    W_KEYS = 10.0
-    W_HOPS = 1.0
-    W_WAIT = 0.5
-
-    prob += pulp.lpSum([
-        x[i] * (W_KEYS * float(min_keys[i]) - W_HOPS * float(hops[i]) + W_WAIT * float(wait[i]))
-        for i in feasible_idx
-    ])
-
-    # Solve (CBC if available)
-    try:
-        solver = pulp.PULP_CBC_CMD(msg=False, timeLimit=0.05)  # keep it fast per-step
-        prob.solve(solver)
-    except Exception:
-        # solver failed -> greedy fallback
-        score = 10.0 * min_keys - 1.0 * hops + 0.5 * wait
-        score = np.where(feasible, score, -np.inf)
-        return int(np.argmax(score))
-
-    # Extract chosen action
-    chosen = None
-    best_val = -1
-
-    for i in feasible_idx:
-        v = int(round(pulp.value(x[i]) or 0))
-        if v == 1:
-            chosen = int(i)
-            break
-        # fallback if solver returns fractional / none:
-        val = pulp.value(x[i])
-        if val is not None and val > best_val:
-            best_val = val
-            chosen = int(i)
-
-    if chosen is None:
-        # final fallback
-        scored = np.where(mask, hops, np.inf)
-        return int(np.argmin(scored))
-
-    return chosen
-
-
-
 # ---------- 메인 평가 루틴 ----------
 def evaluate_checkpoint(
     checkpoint_path: str,
@@ -209,12 +102,12 @@ def evaluate_checkpoint(
     # Env & Agent 준비 (train과 동일한 생성자 경로 사용)
     env = make_env(max_time_step=max_time_step, R_max=R_max, N=N, seed=seed)
     agent = PPOAgent(R_max, PPOConfig(device=device))
-    agent.net.eval().to(device)
 
     # 체크포인트 로드
     ckpt = torch.load(checkpoint_path, map_location=device)
     state = _maybe_extract_state_dict(ckpt)
     agent.net.load_state_dict(state)
+    agent.net.eval().to(device)
     print(f"[load] loaded weights from: {checkpoint_path}")
 
     # ------------ Eval loop ------------
@@ -233,8 +126,8 @@ def evaluate_checkpoint(
         if use_random_policy and agent is not None:
             a = _select_action_argmax(agent, obs, device)
         else:
-            a = _select_action_random(obs)
-            # a = _select_action_fifo(obs)
+            # a = _select_action_random(obs)
+            a = _select_action_fifo(obs)
             # a = _select_action_min_path(obs)
             # a = _select_action_ilp(obs)
 
@@ -242,6 +135,7 @@ def evaluate_checkpoint(
         # print(a)
         # print(obs['mask'])
         obs, r, terminated, truncated, info = env.step(a)
+        # print("a: ", a, "queue size: ", len(env.current_requests))
         cur_ep = info.get("episode_idx", getattr(env, "episode_idx", prev_ep))
         # print(a, info['path_length'])
 
@@ -250,7 +144,7 @@ def evaluate_checkpoint(
         if r > 0:
             ep_success += int(round(ep_reward))
         else:
-            ep_blocking += max_time_step - int(round(ep_reward))
+            ep_blocking += R_max - int(round(ep_reward))
         expired_key = info.get("expired_keys_last_episode")
 
         # 에피소드 경계 감지: episode_idx가 바뀌면 이전 에피소드 종료
@@ -279,24 +173,44 @@ def evaluate_checkpoint(
         "total_generation_keys": int(info.get("total_generation_keys")),
         "total_consumed_keys": int(info.get("total_consumed_keys")),
     }
+
+    # -------- Success rate 계산 --------
+    total_generated_requests = 0
+    total_served_requests = 0
+
+    for (src, dst), requests in env.served_requests.items():
+        total_generated_requests += requests["generated"]
+        total_served_requests += requests["success"]
+
+    success_rate = (
+        total_served_requests / total_generated_requests
+        if total_generated_requests > 0 else 0
+    )
+
+    stats["total_generated_requests"] = int(episodes * R_max)
+    stats["total_queued_requests"] = int(total_generated_requests)
+    stats["total_served_requests"] = int(total_served_requests)
+    stats["success_rate"] = float(success_rate)
+
     df = pd.DataFrame(rewards_np, columns=["reward"])
-    df.to_csv("results/RL_10_reward_log_0.csv", index=False)
+    df.to_csv("results/RL05_reward_log_0.csv", index=False)
 
     rows = []
     for (src, dst), keys in env.key_pool_consume.items():
         rows.append([src, dst, keys])
     df_1 = pd.DataFrame(rows, columns=["src", "dst", "success"])
-    df_1.to_csv("results/RL_10_links_consumed_keys_0.csv", index=False)
+    df_1.to_csv("results/RL05_links_consumed_keys_0.csv", index=False)
 
     rows = []
     for (src, dst), requests in env.served_requests.items():
         rows.append([src, dst, requests['generated'], requests['success']])
     df_2 = pd.DataFrame(rows, columns=["src", "dst", "generated", "served"])
-    df_2.to_csv("results/RL_10_served_requests_0.csv", index=False)
+    df_2.to_csv("results/RL05_served_requests_0.csv", index=False)
 
     print("===== Evaluation Summary =====")
     for k, v in stats.items():
         print(f"{k}: {v}")
+    print("R_max: ", R_max)
     return stats
 
 
@@ -307,12 +221,12 @@ if __name__ == "__main__":
         evaluate_checkpoint(
             ckpt,
             episodes=10_000,
-            max_time_step=15,
-            R_max=15,
+            max_time_step=50,
+            R_max=50,
             N=28,
             seed=0,
             device="cuda",
-            use_random_policy=False  # 랜덤 정책 비교시 False
+            use_random_policy=True  # 랜덤 정책 비교시 False
         )
     else:
         print("No checkpoint found at", ckpt)
