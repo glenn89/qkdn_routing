@@ -87,7 +87,7 @@ class QKDNSchedulingEnv(gym.Env):
         max_requests_per_step: int = 10,
         consume_key_size: int = 1,
         key_pool_size: int = 64,
-        initial_key_lifetime: int = 10,
+        initial_key_lifetime: int = 7,
         generate_key_size: int = 2,
         key_gen_noise_std: float = 1.0,
 

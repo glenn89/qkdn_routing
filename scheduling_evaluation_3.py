@@ -113,6 +113,7 @@ def evaluate_checkpoint(
     # ------------ Eval loop ------------
     rewards = []
     obs, info = env.reset()
+    print(len(env.G.nodes()), len(env.G.edges()))
     cur_ep = info.get("episode_idx", getattr(env, "episode_idx", 0))
 
     ep_reward = 0.0
@@ -126,8 +127,8 @@ def evaluate_checkpoint(
         if use_random_policy and agent is not None:
             a = _select_action_argmax(agent, obs, device)
         else:
-            # a = _select_action_random(obs)
-            a = _select_action_fifo(obs)
+            a = _select_action_random(obs)
+            # a = _select_action_fifo(obs)
             # a = _select_action_min_path(obs)
             # a = _select_action_ilp(obs)
 
@@ -193,19 +194,19 @@ def evaluate_checkpoint(
     stats["success_rate"] = float(success_rate)
 
     df = pd.DataFrame(rewards_np, columns=["reward"])
-    df.to_csv("results/FIFO_reward_log_0.csv", index=False)
+    df.to_csv("results/grid4_RL10_reward_log_0.csv", index=False)
 
     rows = []
     for (src, dst), keys in env.key_pool_consume.items():
         rows.append([src, dst, keys])
     df_1 = pd.DataFrame(rows, columns=["src", "dst", "success"])
-    df_1.to_csv("results/FIFO_links_consumed_keys_0.csv", index=False)
+    df_1.to_csv("results/grid4_RL10_links_consumed_keys_0.csv", index=False)
 
     rows = []
     for (src, dst), requests in env.served_requests.items():
         rows.append([src, dst, requests['generated'], requests['success']])
     df_2 = pd.DataFrame(rows, columns=["src", "dst", "generated", "served"])
-    df_2.to_csv("results/FIFO_served_requests_0.csv", index=False)
+    df_2.to_csv("results/grid4_RL10_served_requests_0.csv", index=False)
 
     print("===== Evaluation Summary =====")
     for k, v in stats.items():
@@ -216,14 +217,14 @@ def evaluate_checkpoint(
 
 if __name__ == "__main__":
     # 예시 실행: 경로/파라미터를 프로젝트 설정에 맞게 바꾸세요
-    ckpt = "./checkpoints/COST266_setppo_update99000.pt"  # 100000 97000 96000 88000 95000(random)
+    ckpt = "./checkpoints/grid4_setppo_update10000.pt"  # 100000 97000 96000 88000 95000(random)
     if os.path.exists(ckpt):
         evaluate_checkpoint(
             ckpt,
             episodes=10_000,
             max_time_step=50,
             R_max=50,
-            N=28,
+            N=16,
             seed=0,
             device="cuda",
             use_random_policy=False  # 랜덤 정책 비교시 False
