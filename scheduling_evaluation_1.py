@@ -173,6 +173,8 @@ def evaluate_checkpoint(
         "total_expired_keys": int(info.get("expired_keys_total")),
         "total_generation_keys": int(info.get("total_generation_keys")),
         "total_consumed_keys": int(info.get("total_consumed_keys")),
+        "avg_queueing_delay": int(info.get("avg_queueing_delay")),
+        "max_queueing_delay": int(info.get("ep_avg_queueing_delay")),
     }
 
     # -------- Success rate 계산 --------
@@ -192,21 +194,37 @@ def evaluate_checkpoint(
     stats["total_queued_requests"] = int(total_generated_requests)
     stats["total_served_requests"] = int(total_served_requests)
     stats["success_rate"] = float(success_rate)
+    stats["avg_queueing_delay"] = float(np.mean(env.queueing_delays)) if env.queueing_delays else 0.0
+    stats["max_queueing_delay"] = float(np.max(env.queueing_delays)) if env.queueing_delays else 0.0
 
     df = pd.DataFrame(rewards_np, columns=["reward"])
-    df.to_csv("results/grid4_RL00_reward_log_0.csv", index=False)
+    df.to_csv("results/COST266_RL00_reward_log.csv", index=False)
 
     rows = []
     for (src, dst), keys in env.key_pool_consume.items():
         rows.append([src, dst, keys])
     df_1 = pd.DataFrame(rows, columns=["src", "dst", "success"])
-    df_1.to_csv("results/grid4_RL00_links_consumed_keys_0.csv", index=False)
+    df_1.to_csv("results/COST266_RL00_links_consumed_keys.csv", index=False)
 
     rows = []
     for (src, dst), requests in env.served_requests.items():
         rows.append([src, dst, requests['generated'], requests['success']])
     df_2 = pd.DataFrame(rows, columns=["src", "dst", "generated", "served"])
-    df_2.to_csv("results/grid4_RL00_served_requests_0.csv", index=False)
+    df_2.to_csv("results/COST266_RL00_served_requests.csv", index=False)
+
+    # episode별 delay 추이 CSV
+    df_delay = pd.DataFrame({
+        "episode": range(len(env.delay_per_episode)),
+        "avg_delay": env.delay_per_episode
+    })
+    df_delay.to_csv("results/COST266_RL00_queueing_delay_per_episode.csv", index=False)
+
+    rows = []
+    for (src, dst), delays in env.pair_queueing_delays.items():
+        if delays:
+            rows.append([src, dst, float(np.mean(delays)), float(np.max(delays)), len(delays)])
+    df_pair = pd.DataFrame(rows, columns=["src", "dst", "avg_delay", "max_delay", "count"])
+    df_pair.to_csv("results/COST266_RL00_pair_queueing_delay.csv", index=False)
 
     print("===== Evaluation Summary =====")
     for k, v in stats.items():
@@ -217,14 +235,14 @@ def evaluate_checkpoint(
 
 if __name__ == "__main__":
     # 예시 실행: 경로/파라미터를 프로젝트 설정에 맞게 바꾸세요
-    ckpt = "./checkpoints/grid4_setppo_update10000.pt"  # 100000 97000 96000 88000 95000(random)
+    ckpt = "./checkpoints/cost266_setppo_update100000.pt"  # 100000 97000 96000 88000 95000(random)
     if os.path.exists(ckpt):
         evaluate_checkpoint(
             ckpt,
             episodes=10_000,
             max_time_step=50,
             R_max=50,
-            N=16,
+            N=28,
             seed=0,
             device="cuda",
             use_random_policy=True  # 랜덤 정책 비교시 False

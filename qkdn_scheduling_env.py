@@ -18,11 +18,12 @@ class Request:
       - wait_left: how many episode boundaries this request can survive.
       - max_wait: original waiting budget (for logging/analytics).
     """
-    def __init__(self, src: int, dst: int, req_id: int, arrival_t: int, wait_left: int):
+    def __init__(self, src: int, dst: int, req_id: int, arrival_t: int, wait_left: int, arrival_episode: int = 0):
         self.src = int(src)
         self.dst = int(dst)
         self.id = int(req_id)
         self.arrival_t = int(arrival_t)
+        self.arrival_episode = int(arrival_episode)
         self.wait_left = int(wait_left)
         self.max_wait = int(wait_left)
 
@@ -169,6 +170,11 @@ class QKDNSchedulingEnv(gym.Env):
         self.dropped_backlog = 0      # stats: dropped due to backlog cap
         self.dropped_wait_expired = 0 # stats: dropped due to wait TTL expiration
 
+        # Queueing delay
+        self.queueing_delays = []     # 성공한 request의 delay 리스트
+        self.delay_per_episode = []   # episode별 평균 delay
+        self._ep_delays_buf = []      # episode 내 임시 버퍼
+
     # ------------------------- core gym API -------------------------
 
     def reset(self, *, seed=None, options=None):
@@ -207,7 +213,10 @@ class QKDNSchedulingEnv(gym.Env):
         self._start_next_episode()  # uses carryover first then fresh
 
         obs = self._build_observation()
-        info = {"num_requests": len(self.current_requests), "episode_idx": self.episode_idx}
+        info = {
+            "num_requests": len(self.current_requests),
+            "episode_idx": self.episode_idx,
+        }
         return obs, info
 
     def step(self, action: int):
@@ -277,6 +286,8 @@ class QKDNSchedulingEnv(gym.Env):
             "expired_keys_total": self.expired_keys_total,
             "total_generation_keys": self.total_generation_keys,
             "total_consumed_keys": self.total_consumed_keys,
+            "avg_queueing_delay": float(np.mean(self.queueing_delays)) if self.queueing_delays else 0.0,
+            "ep_avg_queueing_delay": self.delay_per_episode[-1] if self.delay_per_episode else 0.0,
         }
         return obs, reward, terminated, truncated, info
 
@@ -398,6 +409,13 @@ class QKDNSchedulingEnv(gym.Env):
         # Enforce backlog cap
         self._enforce_backlog_cap()
 
+        # ↓ episode 평균 delay 저장 후 버퍼 초기화
+        if self._ep_delays_buf:
+            self.delay_per_episode.append(float(np.mean(self._ep_delays_buf)))
+        else:
+            self.delay_per_episode.append(0.0)
+        self._ep_delays_buf = []
+
         self.episode_idx += 1
 
     def _enforce_backlog_cap(self):
@@ -504,8 +522,12 @@ class QKDNSchedulingEnv(gym.Env):
                 consumed_keys += 1
                 self.key_pool_consume[e] += 1
         self.total_consumed_keys += consumed_keys
-
         self.served_requests[(req.src, req.dst)]['success'] += 1
+
+        # ↓ Queueing Delay 기록 (episode 단위)
+        delay = self.episode_idx - req.arrival_episode
+        self.queueing_delays.append(delay)
+        self._ep_delays_buf.append(delay)
 
         return True, path
 
@@ -521,7 +543,14 @@ class QKDNSchedulingEnv(gym.Env):
             src = int(iu[k])
             dst = int(ju[k])
             # Assign episode TTL
-            reqs.append(Request(src, dst, req_id=(t * 1000 + ridx), arrival_t=t, wait_left=self.request_wait_episodes))
+            reqs.append(Request(
+                src,
+                dst,
+                req_id=(t * 1000 + ridx),
+                arrival_t=t,
+                wait_left=self.request_wait_episodes,
+                arrival_episode=self.episode_idx
+            ))
             self.served_requests[(src, dst)]['generated'] += 1
         # Decide count
         if self.fixed_requests_per_step:
