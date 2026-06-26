@@ -174,6 +174,7 @@ class QKDNSchedulingEnv(gym.Env):
         self.queueing_delays = []     # 성공한 request의 delay 리스트
         self.delay_per_episode = []   # episode별 평균 delay
         self._ep_delays_buf = []      # episode 내 임시 버퍼
+        self.pair_queueing_delays = {}  # {(src,dst): [delay, delay, ...]} pair별 delay 리스트
 
     # ------------------------- core gym API -------------------------
 
@@ -288,6 +289,7 @@ class QKDNSchedulingEnv(gym.Env):
             "total_consumed_keys": self.total_consumed_keys,
             "avg_queueing_delay": float(np.mean(self.queueing_delays)) if self.queueing_delays else 0.0,
             "ep_avg_queueing_delay": self.delay_per_episode[-1] if self.delay_per_episode else 0.0,
+            "pair_queueing_delay": self.pair_queueing_delays
         }
         return obs, reward, terminated, truncated, info
 
@@ -529,6 +531,10 @@ class QKDNSchedulingEnv(gym.Env):
         self.queueing_delays.append(delay)
         self._ep_delays_buf.append(delay)
 
+        # ↓ pair(src,dst)별 delay 기록
+        pair_key = (req.src, req.dst)
+        self.pair_queueing_delays.setdefault(pair_key, []).append(delay)
+
         return True, path
 
     def _generate_requests(self, t: int, limit: int | None = None):
@@ -605,6 +611,25 @@ class QKDNSchedulingEnv(gym.Env):
 
     # ------------------------- utils -------------------------
 
+    def get_pair_queueing_delay_stats(self):
+        """
+        Pair(src, dst) 별 누적 queueing delay 통계를 계산해서 반환.
+        반환 형식: {(src,dst): {"count": n, "mean": float, "min": int, "max": int, "delays": [...]}}
+        모든 episode가 끝난 뒤(또는 중간에라도) 호출하여 pair별 delay를 확인하는 용도.
+        """
+        stats = {}
+        for pair, delays in self.pair_queueing_delays.items():
+            if not delays:
+                continue
+            stats[pair] = {
+                "count": len(delays),
+                "mean": float(np.mean(delays)),
+                "min": int(np.min(delays)),
+                "max": int(np.max(delays)),
+                "delays": list(delays),
+            }
+        return stats
+
     def render(self):
         print(f"t={self.time_step}, success={self.total_success}, blocking={self.total_blocking}")
 
@@ -614,9 +639,9 @@ class QKDNSchedulingEnv(gym.Env):
 
 if __name__ == "__main__":
     # Small smoke test (may require gymnasium to be installed)
-    topo = {"NUM_QKD_NODE": 6}
-    env = QKDNSchedulingEnv(topo, max_time_steps=10, max_requests_per_step=10, seed=0,
-                            auto_continue=True, request_wait_episodes=2)
+    topo = {"NUM_QKD_NODE": 28}
+    env = QKDNSchedulingEnv(topo, max_time_steps=50, max_requests_per_step=50, seed=0,
+                            auto_continue=True, request_wait_episodes=5)
     obs, info = env.reset()
     print("Reset obs keys:", list(obs.keys()), "info:", info)
     total_reward = 0.0
@@ -637,3 +662,9 @@ if __name__ == "__main__":
         if env.episode_idx - start_ep >= target_episodes:
             break
     print("Episodes run:", env.episode_idx - start_ep, "Total reward:", total_reward)
+
+    # pair(src,dst) 별 queueing delay 통계 출력
+    pair_stats = env.get_pair_queueing_delay_stats()
+    for (src, dst), s in sorted(pair_stats.items()):
+        print(f"pair=({src},{dst}) count={s['count']} mean_delay={s['mean']:.3f} "
+              f"min={s['min']} max={s['max']}")

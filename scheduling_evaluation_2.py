@@ -128,8 +128,8 @@ def evaluate_checkpoint(
             a = _select_action_argmax(agent, obs, device)
         else:
             # a = _select_action_random(obs)
-            # a = _select_action_fifo(obs)
-            a = _select_action_min_path(obs)
+            a = _select_action_fifo(obs)
+            # a = _select_action_min_path(obs)
             # a = _select_action_ilp(obs)
 
         prev_ep = cur_ep
@@ -198,33 +198,33 @@ def evaluate_checkpoint(
     stats["max_queueing_delay"] = float(np.max(env.queueing_delays)) if env.queueing_delays else 0.0
 
     df = pd.DataFrame(rewards_np, columns=["reward"])
-    df.to_csv("results/COST266_RL05_reward_log.csv", index=False)
+    df.to_csv("results/NSFNET/RL05/NSFNET_RL05_reward_log.csv", index=False)
 
     rows = []
     for (src, dst), keys in env.key_pool_consume.items():
         rows.append([src, dst, keys])
     df_1 = pd.DataFrame(rows, columns=["src", "dst", "success"])
-    df_1.to_csv("results/COST266_RL05_links_consumed_keys.csv", index=False)
+    df_1.to_csv("results/NSFNET/RL05/NSFNET_RL05_links_consumed_keys.csv", index=False)
 
     rows = []
     for (src, dst), requests in env.served_requests.items():
         rows.append([src, dst, requests['generated'], requests['success']])
     df_2 = pd.DataFrame(rows, columns=["src", "dst", "generated", "served"])
-    df_2.to_csv("results/COST266_RL05_served_requests.csv", index=False)
+    df_2.to_csv("results/NSFNET/RL05/NSFNET_RL05_served_requests.csv", index=False)
 
     # episode별 delay 추이 CSV
     df_delay = pd.DataFrame({
         "episode": range(len(env.delay_per_episode)),
         "avg_delay": env.delay_per_episode
     })
-    df_delay.to_csv("results/COST266_RL05_queueing_delay_per_episode.csv", index=False)
+    df_delay.to_csv("results/NSFNET/RL05/NSFNET_RL05_queueing_delay_per_episode.csv", index=False)
 
     rows = []
     for (src, dst), delays in env.pair_queueing_delays.items():
         if delays:
             rows.append([src, dst, float(np.mean(delays)), float(np.max(delays)), len(delays)])
     df_pair = pd.DataFrame(rows, columns=["src", "dst", "avg_delay", "max_delay", "count"])
-    df_pair.to_csv("results/COST266_RL05_pair_queueing_delay.csv", index=False)
+    df_pair.to_csv("results/NSFNET/RL05/NSFNET_RL05_pair_queueing_delay.csv", index=False)
 
     print("===== Evaluation Summary =====")
     for k, v in stats.items():
@@ -242,7 +242,7 @@ if __name__ == "__main__":
             episodes=10_000,
             max_time_step=50,
             R_max=50,
-            N=28,
+            N=14,
             seed=0,
             device="cuda",
             use_random_policy=True  # 랜덤 정책 비교시 False
