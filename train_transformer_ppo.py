@@ -358,7 +358,7 @@ def make_env(max_time_step=5, R_max=5, N=6, seed=0):
         max_time_steps=max_time_step,               # longer episodes for training
         max_requests_per_step=R_max,
         auto_continue=True,
-        request_wait_episodes=3,
+        request_wait_episodes=5,
         seed=seed
     )
     return env
