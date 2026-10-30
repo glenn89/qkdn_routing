@@ -5,7 +5,7 @@ import pandas as pd
 # import pulp
 import torch
 
-from train_transformer_ppo import (
+from train_set_transformer_ppo import (
     make_env, PPOAgent, PPOConfig, SetTransformerPolicy
 )
 

@@ -5,11 +5,11 @@ import matplotlib.pyplot as plt
 # ==============================
 # 1. CSV file path
 # ==============================
-# csv_path = "results/COST266/RL00/COST266_RL00_pair_queueing_delay.csv"
-# csv_path = "results/COST266/RL05/COST266_RL05_pair_queueing_delay.csv"
-# csv_path = "results/COST266/RL10/COST266_RL10_pair_queueing_delay.csv"
-# csv_path = "results/COST266/FIFO/COST266_FIFO_pair_queueing_delay.csv"
-csv_path = "results/COST266/MIN/COST266_MIN_pair_queueing_delay.csv"
+# csv_path = "results/GRID/RL00/GRID_RL00_pair_queueing_delay.csv"
+# csv_path = "results/GRID/RL05/GRID_RL05_pair_queueing_delay.csv"
+# csv_path = "results/GRID/RL10/GRID_RL10_pair_queueing_delay.csv"
+# csv_path = "results/GRID/FIFO/GRID_FIFO_pair_queueing_delay.csv"
+csv_path = "results/GRID/MIN/GRID_MIN_pair_queueing_delay.csv"
 
 # ==============================
 # 2. Algorithm name
@@ -29,7 +29,7 @@ print(df.describe())
 # ==============================
 # 4. Create pair-wise delay matrix
 # ==============================
-num_nodes = 28  # COST266 topology
+num_nodes = 25  # COST266 topology
 
 delay_matrix = np.full((num_nodes, num_nodes), np.nan)
 
@@ -74,7 +74,8 @@ im = plt.imshow(
 plt.xlabel("Destination node", fontsize=12)
 plt.ylabel("Source node", fontsize=12)
 
-ticks = [0, 5, 10, 15, 20, 25, 27]
+# ticks = [0, 5, 10, 15, 20, 25, 27]
+ticks = [0, 5, 10, 15, 20, 24]
 plt.xticks(ticks, ticks)
 plt.yticks(ticks, ticks)
 
