@@ -329,7 +329,7 @@ class TrainConfig:
     save_interval: int = 100
     anneal_lr: bool = True
     save_dir: str = "./checkpoints"
-    N: int = 28
+    N: int = 14
     R_max: int = 50
     max_time_step: int = 50
 
@@ -411,16 +411,16 @@ def train(tcfg: TrainConfig = TrainConfig()):
                   f"v_loss={stats['v_loss']:.3f}", flush=True)
 
         if update % tcfg.save_interval == 0:
-            path = os.path.join(tcfg.save_dir, f"COST266_setppo_10_update{update:04d}.pt")
+            path = os.path.join(tcfg.save_dir, f"NSFNET_setppo_update{update:04d}.pt")
             torch.save({"model": agent.net.state_dict(), "optimizer": agent.opt.state_dict(),
                         "update": update, "global_step": global_step}, path)
 
-    final = os.path.join(tcfg.save_dir, "COST266_setppo_10_final.pt")
+    final = os.path.join(tcfg.save_dir, "NSFNET_setppo_final.pt")
     torch.save({"model": agent.net.state_dict(), "optimizer": agent.opt.state_dict(),
                 "update": tcfg.total_updates, "global_step": global_step}, final)
     print(f"Training finished. Final checkpoint saved to {final}")
 
-    logging.basicConfig(filename="COST266_reward.log", level=logging.INFO, format="%(asctime)s - %(message)s")
+    logging.basicConfig(filename="NSFNET_reward.log", level=logging.INFO, format="%(asctime)s - %(message)s")
     for u, r, s in zip(update_idx, ep_returns_hist, stats_hist):
         logging.info({"update": u, "ep_return": r, **s})
 
@@ -432,7 +432,7 @@ def train(tcfg: TrainConfig = TrainConfig()):
         ax[2].set_xlabel("Update")
         for a in ax: a.grid(True, alpha=0.3)
         fig.tight_layout()
-        fig.savefig(os.path.join(tcfg.save_dir, "COST266_training_10_curves.png"), dpi=150)
+        fig.savefig(os.path.join(tcfg.save_dir, "NSFNET_training_curves.png"), dpi=150)
         plt.close(fig)
     except Exception as e:
         print("Plotting failed:", e)

@@ -1,7 +1,0 @@
-,avg_reward,avg_reward,avg_success_per_ep,avg_success_per_ep,attempt_success_rate,attempt_success_rate,request_success_rate,request_success_rate,expired_requests,expired_requests,avg_hops_served,avg_hops_served,key_utilization,key_utilization,expired_keys,expired_keys,avg_queueing_delay,avg_queueing_delay,p95_queueing_delay,p95_queueing_delay,jfi_served_count,jfi_served_count,jfi_service_ratio,jfi_service_ratio,min_pair_service_ratio,min_pair_service_ratio,starved_pairs,starved_pairs
-,mean,std,mean,std,mean,std,mean,std,mean,std,mean,std,mean,std,mean,std,mean,std,mean,std,mean,std,mean,std,mean,std,mean,std
-policy,,,,,,,,,,,,,,,,,,,,,,,,,,,,
-ppo,31.187,,31.187,,0.62374,,0.9579788050990631,,1368.0,,3.7178632122358675,,0.5496646045177653,,92993.0,,0.3416808247566223,,2.0,,0.9764275083027547,,0.985831196677031,,0.313953488372093,,0.0,
-random,29.371,,29.371,,0.58742,,0.9861997179504398,,411.0,,3.7814170440230157,,0.5426438398999375,,92365.0,,0.6179224252700806,,3.0,,0.9884866935687752,,0.9996170656605279,,0.8987341772151899,,0.0,
-fifo,28.007,,28.007,,0.56014,,1.0,,0.0,,3.8120112828935624,,0.5367915089169445,,90400.0,,0.7857321500778198,,2.0,,0.9886260457986792,,0.9999789311862879,,0.975,,0.0,
-min_hop_feasible,30.558,,30.558,,0.61116,,0.9515476116335555,,1556.0,,3.4235552064925714,,0.5015990065542487,,102450.0,,0.3319588899612427,,2.0,,0.9620250324236753,,0.9721234573209407,,0.06097560975609756,,0.0,

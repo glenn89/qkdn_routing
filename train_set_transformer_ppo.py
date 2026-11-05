@@ -1,10 +1,11 @@
 import logging
 import os
-import time
 import math
 import random
 from dataclasses import dataclass
 from typing import Dict, Tuple, List
+import matplotlib
+matplotlib.use("Agg")
 import matplotlib.pyplot as plt
 
 import numpy as np
@@ -12,7 +13,7 @@ import torch
 import torch.nn as nn
 import torch.nn.functional as F
 
-from qkdn_scheduling_env import QKDNSchedulingEnv
+from qkdn_scheduling_env_1 import QKDNSchedulingEnv
 
 # -----------------------------
 # Utils
@@ -26,18 +27,14 @@ def set_seed(seed: int):
         torch.cuda.manual_seed_all(seed)
 
 def to_tensor(x, device):
-    return torch.tensor(x, dtype=torch.float32, device=device)
+    return torch.as_tensor(np.asarray(x), dtype=torch.float32, device=device)
 
 def obs_to_tensors(obs, device):
-    # obs is dict of numpy arrays
     return {k: to_tensor(v, device) for k, v in obs.items()}
 
 def stack_obs(obs_list: List[Dict[str, np.ndarray]], device):
     keys = obs_list[0].keys()
-    out = {}
-    for k in keys:
-        out[k] = to_tensor(np.stack([o[k] for o in obs_list], axis=0), device)
-    return out
+    return {k: to_tensor(np.stack([o[k] for o in obs_list], axis=0), device) for k in keys}
 
 # -----------------------------
 # Attention & Set Transformer blocks
@@ -47,201 +44,187 @@ class MultiHeadAttention(nn.Module):
     def __init__(self, d_model: int, n_head: int, dropout: float = 0.0):
         super().__init__()
         assert d_model % n_head == 0
-        self.d_model = d_model
         self.n_head = n_head
         self.d_head = d_model // n_head
-
         self.q_proj = nn.Linear(d_model, d_model)
         self.k_proj = nn.Linear(d_model, d_model)
         self.v_proj = nn.Linear(d_model, d_model)
         self.o_proj = nn.Linear(d_model, d_model)
         self.drop = nn.Dropout(dropout)
 
-    def forward(self, q, k, v, mask=None):
-        # q: [B, Q, D], k/v: [B, K, D], mask: [B, Q, K] (True=keep, False=mask-out) or None
+    def forward(self, q, k, v, key_mask=None):
+        # q: [B,Q,D], k/v: [B,K,D], key_mask: [B,K] (True=실제 원소) or None
         B, Q, D = q.shape
-        _, K, _ = k.shape
+        K = k.shape[1]
+        q = self.q_proj(q).view(B, Q, self.n_head, self.d_head).transpose(1, 2)
+        k = self.k_proj(k).view(B, K, self.n_head, self.d_head).transpose(1, 2)
+        v = self.v_proj(v).view(B, K, self.n_head, self.d_head).transpose(1, 2)
 
-        q = self.q_proj(q).view(B, Q, self.n_head, self.d_head).transpose(1, 2)  # [B,H,Q,d]
-        k = self.k_proj(k).view(B, K, self.n_head, self.d_head).transpose(1, 2)  # [B,H,K,d]
-        v = self.v_proj(v).view(B, K, self.n_head, self.d_head).transpose(1, 2)  # [B,H,K,d]
-
-        attn_logits = (q @ k.transpose(-2, -1)) / math.sqrt(self.d_head)         # [B,H,Q,K]
-        if mask is not None:
-            attn_logits = attn_logits.masked_fill(~mask[:, None, :, :], float('-inf'))
-        attn = attn_logits.softmax(dim=-1)                                       # [B,H,Q,K]
+        attn_logits = (q @ k.transpose(-2, -1)) / math.sqrt(self.d_head)        # [B,H,Q,K]
+        if key_mask is not None:
+            attn_logits = attn_logits.masked_fill(~key_mask[:, None, None, :], float("-inf"))
+        attn = attn_logits.softmax(dim=-1)
+        attn = torch.nan_to_num(attn, nan=0.0)   # 요청이 0개인 배치(전부 마스킹) 방어
         attn = self.drop(attn)
-        out = attn @ v                                                           # [B,H,Q,d]
-        out = out.transpose(1, 2).contiguous().view(B, Q, D)                     # [B,Q,D]
+        out = (attn @ v).transpose(1, 2).contiguous().view(B, Q, D)
         return self.o_proj(out)
 
 
-class SAB(nn.Module):
-    """Set Attention Block"""
+class MAB(nn.Module):
+    """Multihead Attention Block (Pre-LN): MAB(X, Y) = X + Attn(X, Y) + FFN"""
     def __init__(self, d_model: int, n_head: int, dropout: float = 0.0):
         super().__init__()
-        self.ln1 = nn.LayerNorm(d_model)
+        self.ln_q = nn.LayerNorm(d_model)
+        self.ln_kv = nn.LayerNorm(d_model)
         self.attn = MultiHeadAttention(d_model, n_head, dropout)
         self.ln2 = nn.LayerNorm(d_model)
         self.ffn = nn.Sequential(
-            nn.Linear(d_model, 4 * d_model),
-            nn.GELU(),
-            nn.Dropout(dropout),
+            nn.Linear(d_model, 4 * d_model), nn.GELU(), nn.Dropout(dropout),
             nn.Linear(4 * d_model, d_model),
         )
 
-    def forward(self, X):  # X: [B, R, D]
-        h = self.attn(self.ln1(X), self.ln1(X), self.ln1(X))
-        X = X + h
+    def forward(self, X, Y, key_mask=None):
+        Yn = self.ln_kv(Y)
+        X = X + self.attn(self.ln_q(X), Yn, Yn, key_mask)
         X = X + self.ffn(self.ln2(X))
         return X
+
+
+class SAB(nn.Module):
+    """Set Attention Block: SAB(X) = MAB(X, X), 패딩 원소는 key에서 제외"""
+    def __init__(self, d_model: int, n_head: int, dropout: float = 0.0):
+        super().__init__()
+        self.mab = MAB(d_model, n_head, dropout)
+
+    def forward(self, X, key_mask=None):
+        return self.mab(X, X, key_mask)
+
+
+class PMA(nn.Module):
+    """Pooling by Multihead Attention: 학습 가능한 seed k개가 집합을 요약 (순열 불변)"""
+    def __init__(self, d_model: int, n_head: int, k: int = 1, dropout: float = 0.0):
+        super().__init__()
+        self.seed = nn.Parameter(torch.randn(1, k, d_model) * 0.02)
+        self.mab = MAB(d_model, n_head, dropout)
+
+    def forward(self, Z, key_mask=None):
+        S = self.seed.expand(Z.size(0), -1, -1)
+        return self.mab(S, Z, key_mask).flatten(1)   # [B, k*D]
 
 # -----------------------------
 # Encoders & Policy
 # -----------------------------
 
 class GlobalEncoder(nn.Module):
-    """num_key(NxN) via CNN + t(1) embedding -> global vector"""
-    def __init__(self, d_out: int):
+    """num_key(N×N) + t → 전역 벡터.
+    고정 토폴로지(Grid6)에서는 링크별 키 수 자체가 중요하므로 공간 정보를 평균내지 않고 flatten MLP 사용.
+    (토폴로지 일반화가 필요하면 GNN/edge-token 방식으로 교체 권장)"""
+    def __init__(self, N: int, d_out: int):
         super().__init__()
-        self.conv = nn.Sequential(
-            nn.Conv2d(1, 16, 3, padding=1), nn.ReLU(),
-            nn.Conv2d(16, 32, 3, padding=1), nn.ReLU(),
-            nn.AdaptiveAvgPool2d(1)  # -> [B, 32, 1, 1]
+        self.mlp = nn.Sequential(
+            nn.Linear(N * N + 1, d_out), nn.ReLU(),
+            nn.Linear(d_out, d_out), nn.ReLU(),
         )
-        self.proj = nn.Linear(32, d_out)
 
-    def forward(self, num_key):  # num_key: [B,N,N], t: ideally [B,1]
-        # Ensure num_key has batch dim: [B,N,N] -> [B,1,N,N]
-        if num_key.dim() == 2:                  # [N,N]
-            num_key = num_key.unsqueeze(0)      # [1,N,N]
-        x = num_key.unsqueeze(1).float()        # [B,1,N,N]
-        g = self.conv(x).flatten(1)             # [B,32]
-        g = self.proj(g)                        # [B,d_out]
-        return g
+    def forward(self, num_key, t):          # [B,N,N], [B,1]
+        return self.mlp(torch.cat([num_key.flatten(1), t], dim=-1))
 
 
 class RequestSetEncoder(nn.Module):
-    """(R,5) -> row MLP -> SABx2 -> (R,d_req)"""
-    def __init__(self, d_req: int, n_head: int, dropout: float = 0.0):
+    """(R, F) → row MLP → SAB×2(마스크 적용) → final LN → (R, d)"""
+    def __init__(self, f_in: int, d_req: int, n_head: int, dropout: float = 0.0):
         super().__init__()
         self.row_mlp = nn.Sequential(
-            nn.Linear(5, d_req), nn.ReLU(),
-            nn.Linear(d_req, d_req), nn.ReLU(),
+            nn.Linear(f_in, d_req), nn.ReLU(),
+            nn.Linear(d_req, d_req),
         )
         self.sab1 = SAB(d_req, n_head, dropout)
         self.sab2 = SAB(d_req, n_head, dropout)
+        self.ln_out = nn.LayerNorm(d_req)
 
-    def forward(self, requests):  # [B,R,5]
+    def forward(self, requests, key_mask):
         X = self.row_mlp(requests)
-        X = self.sab1(X)
-        X = self.sab2(X)
-        return X
+        X = self.sab1(X, key_mask)
+        X = self.sab2(X, key_mask)
+        return self.ln_out(X)
+
+
+class Actor(nn.Module):
+    """요청별 logit (순열 등변)"""
+    def __init__(self, N, f_req, d_global, d_req, n_head, dropout):
+        super().__init__()
+        self.global_enc = GlobalEncoder(N, d_global)
+        self.req_enc = RequestSetEncoder(f_req, d_req, n_head, dropout)
+        self.head = nn.Sequential(nn.Linear(d_global + d_req, 128), nn.ReLU(), nn.Linear(128, 1))
+        nn.init.orthogonal_(self.head[-1].weight, gain=0.01)   # 초기 정책 ≈ 균등
+        nn.init.zeros_(self.head[-1].bias)
+
+    def forward(self, num_key, t, requests, mask):
+        g = self.global_enc(num_key, t)
+        Z = self.req_enc(requests, mask)
+        R = requests.shape[1]
+        return self.head(torch.cat([g.unsqueeze(1).expand(-1, R, -1), Z], -1)).squeeze(-1)
+
+
+class Critic(nn.Module):
+    """상태 가치 (순열 불변, PMA 풀링)"""
+    def __init__(self, N, f_req, d_global, d_req, n_head, dropout):
+        super().__init__()
+        self.global_enc = GlobalEncoder(N, d_global)
+        self.req_enc = RequestSetEncoder(f_req, d_req, n_head, dropout)
+        self.pma = PMA(d_req, n_head, k=1, dropout=dropout)
+        self.head = nn.Sequential(nn.Linear(d_global + d_req, 128), nn.ReLU(), nn.Linear(128, 1))
+
+    def forward(self, num_key, t, requests, mask):
+        g = self.global_enc(num_key, t)
+        Z = self.req_enc(requests, mask)
+        return self.head(torch.cat([g, self.pma(Z, mask)], -1)).squeeze(-1)
 
 
 class SetTransformerPolicy(nn.Module):
-    def __init__(self, R_max: int, d_global: int = 128, d_req: int = 128, n_head: int = 4, dropout: float = 0.0):
+    """[수정] Actor/Critic 인코더 분리.
+    공유 인코더에서는 value loss gradient가 policy gradient보다 수백 배 커서
+    전체 norm 기준 grad clipping 후 정책이 거의 갱신되지 않았음."""
+    def __init__(self, R_max: int, N: int, f_req: int,
+                 d_global: int = 128, d_req: int = 128, n_head: int = 4, dropout: float = 0.0):
         super().__init__()
         self.R_max = R_max
-        self.global_enc = GlobalEncoder(d_out=d_global)
-        self.req_enc    = RequestSetEncoder(d_req=d_req, n_head=n_head, dropout=dropout)
+        self.actor = Actor(N, f_req, d_global, d_req, n_head, dropout)
+        self.critic = Critic(N, f_req, d_global, d_req, n_head, dropout)
 
-        self.policy_head = nn.Sequential(
-            nn.Linear(d_global + d_req, 128), nn.ReLU(),
-            nn.Linear(128, 1)
-        )
-        self.value_head = nn.Sequential(
-            nn.Linear(d_global + d_req, 128), nn.ReLU(),
-            nn.Linear(128, 1)
-        )
+    @staticmethod
+    def _ensure_batch(obs):
+        if obs["requests"].dim() == 2:
+            return {k: v.unsqueeze(0) for k, v in obs.items()}, True
+        return obs, False
 
     def forward(self, obs: Dict[str, torch.Tensor]):
-        obs, added = self._ensure_batch(obs)
-
-        num_key = obs["num_key"]     # [B,N,N]
-        requests = obs["requests"]    # [B,R,5]
-        B, R, _ = requests.shape
+        """returns masked_logits [B,R], value [B]"""
+        num_key, requests = obs["num_key"], obs["requests"]
+        mask = obs["mask"].to(torch.bool)                 # env의 mask = 실제 요청 슬롯(패딩 마스크)
+        t = obs["t"].view(-1, 1)
+        R = requests.shape[1]
         assert R == self.R_max
 
-        g = self.global_enc(num_key)          # [B,dg]  # <- t 제거
-        Z = self.req_enc(requests)            # [B,R,dr]
+        logits = self.actor(num_key, t, requests, mask)   # [B,R]
+        value = self.critic(num_key, t, requests, mask)   # [B]
 
-        g_expand = g.unsqueeze(1).expand(-1, R, -1)  # [B,R,dg]
-        policy_in = torch.cat([g_expand, Z], dim=-1) # [B,R,dg+dr]
-        logits = self.policy_head(policy_in).squeeze(-1)
+        # 행동 마스킹 (전부 무효인 배치는 action 0 강제)
+        all_invalid = (~mask).all(dim=-1, keepdim=True)
+        act_mask = mask | (all_invalid & (torch.arange(R, device=mask.device) == 0))
+        masked_logits = torch.where(act_mask, logits, torch.full_like(logits, -1e9))
+        return masked_logits, value
 
-        Z_pool = Z.mean(dim=1)
-        v_in = torch.cat([g, Z_pool], dim=-1)
-        value = self.value_head(v_in)
-        return logits, value
-
-    def act(self, obs: Dict[str, torch.Tensor]):
-        obs_fixed, added = self._ensure_batch(obs)
-        logits, value = self.forward(obs_fixed)
-        mask = obs_fixed["mask"].to(torch.bool)   # [B,R]
-        masked_logits = logits.masked_fill(~mask, float('-inf'))
-
-        all_invalid = (~mask).all(dim=-1)  # [B]
-        if all_invalid.any():
-            # 해당 배치의 로짓을 0으로 만들고, 액션은 0으로 고정 (또는 임의 유효 인덱스)
-            masked_logits = masked_logits.masked_fill(all_invalid.unsqueeze(1), float('-inf'))
-            masked_logits[all_invalid, 0] = 0.0
-
-        dist = torch.distributions.Categorical(logits=masked_logits)
-        action = dist.sample()                # [B]
-        logp = dist.log_prob(action)          # [B]
-
-        # print("logits: ", masked_logits)  # 마스킹된 로짓
-        # print("probs: ", dist.probs)  # 확률 분포
-        # print("logits (dist 내부): ", dist.logits)  # distribution이 쓰는 로짓
-        # print("batch_shape: ", dist.batch_shape)  # 배치 차원
-
+    @torch.no_grad()
+    def act(self, obs: Dict[str, torch.Tensor], greedy: bool = False):
+        obs_b, added = self._ensure_batch(obs)
+        logits, value = self.forward(obs_b)
+        dist = torch.distributions.Categorical(logits=logits)
+        action = logits.argmax(-1) if greedy else dist.sample()
+        logp = dist.log_prob(action)
         if added:
-            # 단일 샘플이면 배치 차원 제거
-            action = action.squeeze(0)
-            logp   = logp.squeeze(0)
-            value  = value.squeeze(0)
-        return action, logp, value.squeeze(-1)
-
-    def _ensure_batch(self, obs: Dict[str, torch.Tensor]) -> Tuple[Dict[str, torch.Tensor], bool]:
-        """Ensure tensors have a batch dim ONLY if missing.
-        Expected shapes (B is batch):
-          - num_key: [B,N,N] or [N,N] (single)
-          - requests: [B,R,5] or [R,5] (single)
-          - mask: [B,R] or [R] (single)
-          - t: [B,1] or [1] (single)
-        """
-        out = {}
-        added = False
-
-        # num_key
-        nk = obs.get("num_key")
-        if nk is not None:
-            if nk.dim() == 2:                    # [N,N] -> add batch
-                out["num_key"] = nk.unsqueeze(0) # [1,N,N]
-                added = True
-            else:                                # [B,N,N]
-                out["num_key"] = nk
-
-        # requests
-        rq = obs.get("requests")
-        if rq is not None:
-            if rq.dim() == 2:                    # [R,5] -> add batch
-                out["requests"] = rq.unsqueeze(0) # [1,R,5]
-                added = True
-            else:                                 # [B,R,5]
-                out["requests"] = rq
-
-        # mask
-        mk = obs.get("mask")
-        if mk is not None:
-            if mk.dim() == 1:                     # [R] -> add batch
-                out["mask"] = mk.unsqueeze(0)     # [1,R]
-                added = True
-            else:                                  # [B,R]
-                out["mask"] = mk
-
-        return out, added
+            return action[0], logp[0], value[0]
+        return action, logp, value
 
 # -----------------------------
 # PPO
@@ -249,94 +232,89 @@ class SetTransformerPolicy(nn.Module):
 
 @dataclass
 class PPOConfig:
-    lr: float = 1e-4 # 3e-4
-    gamma: float = 0.98
+    lr: float = 3e-4
+    gamma: float = 0.99
     lam: float = 0.95
-    clip_eps: float = 0.1 # 0.2
+    clip_eps: float = 0.2
     vf_coef: float = 0.5
-    ent_coef: float = 0.05 # 0.01
+    ent_coef: float = 0.01
     max_grad_norm: float = 0.5
-    update_epochs: int = 4
+    update_epochs: int = 2
     minibatch_size: int = 256
+    target_kl: float = 0.02     # approx KL이 넘으면 이번 update의 남은 epoch 중단
     device: str = "cuda" if torch.cuda.is_available() else "cpu"
 
-class PPOAgent:
-    def __init__(self, R_max: int, cfg: PPOConfig = PPOConfig()):
-        self.cfg = cfg
-        self.net = SetTransformerPolicy(R_max).to(cfg.device)
-        self.opt = torch.optim.Adam(self.net.parameters(), lr=cfg.lr)
 
-    @torch.no_grad()
+class PPOAgent:
+    def __init__(self, R_max: int, N: int, f_req: int, cfg: PPOConfig = PPOConfig()):
+        self.cfg = cfg
+        self.net = SetTransformerPolicy(R_max, N, f_req).to(cfg.device)
+        self.opt = torch.optim.Adam(self.net.parameters(), lr=cfg.lr, eps=1e-5)
+
     def select_action(self, obs_dict):
-        tens = obs_to_tensors(obs_dict, self.cfg.device)
-        a, logp, v = self.net.act(tens)
-        return a.cpu().numpy(), logp.cpu().numpy(), v.cpu().numpy()
+        a, logp, v = self.net.act(obs_to_tensors(obs_dict, self.cfg.device))
+        return int(a.item()), float(logp.item()), float(v.item())
 
     def ppo_update(self, obs_t, act_t, old_logp_t, ret_t, adv_t):
         cfg = self.cfg
-        # normalize advantages
         adv_t = (adv_t - adv_t.mean()) / (adv_t.std() + 1e-8)
-
-        num_samples = adv_t.size(0)
-        idx = torch.randperm(num_samples, device=cfg.device)
+        n = adv_t.size(0)
+        stats = {"pg_loss": [], "v_loss": [], "entropy": [], "approx_kl": [], "clipfrac": []}
 
         for _ in range(cfg.update_epochs):
-            for start in range(0, num_samples, cfg.minibatch_size):
-                mb_idx = idx[start:start+cfg.minibatch_size]
+            idx = torch.randperm(n, device=cfg.device)          # [수정] epoch마다 셔플
+            epoch_kl = []
+            for start in range(0, n, cfg.minibatch_size):
+                mb = idx[start:start + cfg.minibatch_size]
+                logits, value = self.net({k: v[mb] for k, v in obs_t.items()})
+                dist = torch.distributions.Categorical(logits=logits)
 
-                obs_mb = {k: v[mb_idx] for k, v in obs_t.items()}
-                act_mb = act_t[mb_idx]
-                old_logp_mb = old_logp_t[mb_idx]
-                ret_mb = ret_t[mb_idx]
-                adv_mb = adv_t[mb_idx]
+                logp = dist.log_prob(act_t[mb])
+                log_ratio = logp - old_logp_t[mb]
+                ratio = log_ratio.exp()
+                adv = adv_t[mb]
 
-                logits, value = self.net(obs_mb)
-                mask = obs_mb["mask"].to(torch.bool)
-                masked_logits = logits.masked_fill(~mask, float('-inf'))
-
-                all_invalid = (~mask).all(dim=-1)  # [MB]
-                if all_invalid.any():
-                    masked_logits = masked_logits.masked_fill(all_invalid.unsqueeze(1), float('-inf'))
-                    masked_logits[all_invalid, 0] = 0.0
-                dist = torch.distributions.Categorical(logits=masked_logits)
-
-                logp = dist.log_prob(act_mb)
-                ratio = torch.exp(logp - old_logp_mb)
-
-                pg_unclipped = ratio * adv_mb
-                pg_clipped = torch.clamp(ratio, 1.0 - cfg.clip_eps, 1.0 + cfg.clip_eps) * adv_mb
-                pg_loss = -torch.min(pg_unclipped, pg_clipped).mean()
-
-                v_loss = F.mse_loss(value.squeeze(-1), ret_mb)
+                pg_loss = -torch.min(ratio * adv,
+                                     ratio.clamp(1 - cfg.clip_eps, 1 + cfg.clip_eps) * adv).mean()
+                v_loss = F.mse_loss(value, ret_t[mb])
                 ent = dist.entropy().mean()
-
                 loss = pg_loss + cfg.vf_coef * v_loss - cfg.ent_coef * ent
 
                 self.opt.zero_grad(set_to_none=True)
                 loss.backward()
-                nn.utils.clip_grad_norm_(self.net.parameters(), cfg.max_grad_norm)
+                # [수정] actor/critic 따로 clipping: value gradient가 policy gradient를 잠식하지 않도록
+                nn.utils.clip_grad_norm_(self.net.actor.parameters(), cfg.max_grad_norm)
+                nn.utils.clip_grad_norm_(self.net.critic.parameters(), cfg.max_grad_norm)
                 self.opt.step()
 
+                with torch.no_grad():
+                    kl = ((ratio - 1) - log_ratio).mean().item()
+                    stats["approx_kl"].append(kl)
+                    stats["clipfrac"].append(((ratio - 1).abs() > cfg.clip_eps).float().mean().item())
+                    stats["pg_loss"].append(pg_loss.item())
+                    stats["v_loss"].append(v_loss.item())
+                    stats["entropy"].append(ent.item())
+                    epoch_kl.append(kl)
+            if cfg.target_kl is not None and np.mean(epoch_kl) > cfg.target_kl:
+                break                                            # [추가] KL 조기 종료
+        return {k: float(np.mean(v)) for k, v in stats.items()}
+
 # -----------------------------
-# Rollout & GAE
+# GAE
 # -----------------------------
 
-def compute_gae(rewards, values, dones, gamma, lam):
-    """
-    rewards, values, dones: shape [T]
-    returns advantages, returns_t: shape [T]
-    """
+def compute_gae(rewards, values, dones, last_value, gamma, lam):
+    """rewards/values/dones: [T], last_value: V(s_T). dones[t]=True면 t 이후 bootstrap 안 함."""
     T = len(rewards)
     adv = np.zeros(T, dtype=np.float32)
     lastgaelam = 0.0
     for t in reversed(range(T)):
-        nextnonterminal = 1.0 - float(dones[t])
-        nextvalue = values[t + 1] if t + 1 < len(values) else 0.0
-        delta = rewards[t] + gamma * nextvalue * nextnonterminal - values[t]
-        lastgaelam = delta + gamma * lam * nextnonterminal * lastgaelam
+        nonterminal = 1.0 - float(dones[t])
+        next_v = last_value if t == T - 1 else values[t + 1]
+        delta = rewards[t] + gamma * next_v * nonterminal - values[t]
+        lastgaelam = delta + gamma * lam * nonterminal * lastgaelam
         adv[t] = lastgaelam
-    ret = adv + values[:T]
-    return adv, ret
+    return adv, adv + values
 
 # -----------------------------
 # Training Loop
@@ -345,161 +323,120 @@ def compute_gae(rewards, values, dones, gamma, lam):
 @dataclass
 class TrainConfig:
     seed: int = 0
-    total_updates: int = 10_000
-    rollout_steps: int = 100   # steps per update
+    total_updates: int = 1_000
+    rollout_steps: int = 2048         # [수정] 100 → 2048 (≈41 에피소드/업데이트)
     log_interval: int = 10
-    save_interval: int = 1000
+    save_interval: int = 100
+    anneal_lr: bool = True
     save_dir: str = "./checkpoints"
+    N: int = 14
+    R_max: int = 50
+    max_time_step: int = 50
 
-def make_env(max_time_step=5, R_max=5, N=6, seed=0):
-    topo = {"NUM_QKD_NODE": N}
-    env = QKDNSchedulingEnv(
-        topo,
-        max_time_steps=max_time_step,               # longer episodes for training
+
+def make_env(max_time_step=50, R_max=50, N=6, seed=0):
+    return QKDNSchedulingEnv(
+        {"NUM_QKD_NODE": N},
+        max_time_steps=max_time_step,
         max_requests_per_step=R_max,
         auto_continue=True,
         request_wait_episodes=5,
-        seed=seed
+        seed=seed,
+        immediate_reward=True,
+        include_path_edges=True,
     )
-    return env
 
-def train():
-    tcfg = TrainConfig()
+
+def train(tcfg: TrainConfig = TrainConfig()):
     device = "cuda" if torch.cuda.is_available() else "cpu"
     set_seed(tcfg.seed)
 
-    # Build env and agent
-    R_max = 50
-    max_time_step = R_max
-    env = make_env(max_time_step=max_time_step, R_max=R_max, N=6, seed=tcfg.seed)
+    env = make_env(tcfg.max_time_step, tcfg.R_max, tcfg.N, tcfg.seed)
     obs, info = env.reset()
-    prev_ep_idx = info.get("episode_idx", getattr(env, "episode_idx", 0))
+    prev_ep_idx = info["episode_idx"]
 
-    agent = PPOAgent(R_max, PPOConfig(device=device))
+    agent = PPOAgent(tcfg.R_max, tcfg.N, env.req_feat_dim, PPOConfig(device=device))
     os.makedirs(tcfg.save_dir, exist_ok=True)
 
-    ep_returns = []
+    ep_return, ep_returns_hist, update_idx, stats_hist = 0.0, [], [], []
     global_step = 0
 
-    reward_hist = []  # update마다 평균 step reward (롤아웃 평균)
-    raw_reward = []
-    adv_hist = []  # update마다 평균 advantage
-    update_idx = []  # x축: update 번호
-
     for update in range(1, tcfg.total_updates + 1):
-        # Storage
+        if tcfg.anneal_lr:
+            for pg in agent.opt.param_groups:
+                pg["lr"] = agent.cfg.lr * (1.0 - (update - 1) / tcfg.total_updates)
+
         obs_buf, act_buf, logp_buf, val_buf, rew_buf, done_buf = [], [], [], [], [], []
+        finished_returns = []
 
-        # Rollout
-        steps = 0
-        while steps < tcfg.rollout_steps:
-            obs_buf.append(obs)
-            act, logp, val = agent.select_action(obs)
-            # env expects scalar action
-            a = int(act[0]) if np.ndim(act) > 0 else int(act)
+        for _ in range(tcfg.rollout_steps):
+            obs_buf.append(obs)       # env가 매 step 새 배열을 만들어 반환하므로 복사 불필요
+            a, logp, v = agent.select_action(obs)
             obs, reward, terminated, truncated, info = env.step(a)
-            cur_ep_idx = info.get("episode_idx", getattr(env, "episode_idx", prev_ep_idx))
 
-            # Check episode_idx
-            crossed = (cur_ep_idx != prev_ep_idx)
-
-            act_buf.append(a)
-            logp_buf.append(float(logp[0]) if np.ndim(logp) > 0 else float(logp))
-            val_buf.append(float(val[0]) if np.ndim(val) > 0 else float(val))
-            rew_buf.append(float(reward))
+            crossed = info["episode_idx"] != prev_ep_idx
+            prev_ep_idx = info["episode_idx"]
             done = bool(terminated or truncated or crossed)
-            done_buf.append(done)
 
-            prev_ep_idx = cur_ep_idx
+            act_buf.append(a); logp_buf.append(logp); val_buf.append(v)
+            rew_buf.append(float(reward)); done_buf.append(done)
+
+            ep_return += reward
+            if done:
+                finished_returns.append(ep_return)
+                ep_return = 0.0
             global_step += 1
-            steps += 1
 
-        # Bootstrap value for GAE (last obs)
-        last_v = agent.net.forward(obs_to_tensors(obs, device))[1].detach().cpu().numpy().squeeze()
-        val_np = np.array(val_buf + [0.0 if done_buf[-1] else last_v], dtype=np.float32)
-        rew_np = np.array(rew_buf, dtype=np.float32)
-        done_np = np.array(done_buf, dtype=np.bool_)
+        with torch.no_grad():
+            _, last_v = agent.net(SetTransformerPolicy._ensure_batch(obs_to_tensors(obs, device))[0])
+        adv_np, ret_np = compute_gae(np.array(rew_buf, np.float32), np.array(val_buf, np.float32),
+                                     np.array(done_buf), float(last_v.item()),
+                                     agent.cfg.gamma, agent.cfg.lam)
 
-        adv_np, ret_np = compute_gae(rew_np, val_np, done_np, agent.cfg.gamma, agent.cfg.lam)
+        stats = agent.ppo_update(
+            stack_obs(obs_buf, device),
+            torch.tensor(act_buf, dtype=torch.long, device=device),
+            torch.tensor(logp_buf, dtype=torch.float32, device=device),
+            torch.tensor(ret_np, dtype=torch.float32, device=device),
+            torch.tensor(adv_np, dtype=torch.float32, device=device),
+        )
 
-        # Prepare tensors
-        obs_t = stack_obs(obs_buf, device)
-        act_t = torch.tensor(np.array(act_buf), dtype=torch.long, device=device)
-        old_logp_t = torch.tensor(np.array(logp_buf), dtype=torch.float32, device=device)
-        adv_t = torch.tensor(adv_np, dtype=torch.float32, device=device)
-        ret_t = torch.tensor(ret_np, dtype=torch.float32, device=device)
+        mean_ep_ret = float(np.mean(finished_returns)) if finished_returns else float("nan")
+        ep_returns_hist.append(mean_ep_ret); update_idx.append(update); stats_hist.append(stats)
 
-        # PPO update
-        agent.ppo_update(obs_t, act_t, old_logp_t, ret_t, adv_t)
-
-        # History save
-        avg_rew_this_update = float(np.mean(rew_np)) if rew_np.size else 0.0
-        avg_adv_this_update = float(np.mean(adv_np)) if adv_np.size else 0.0
-        reward_hist.append(avg_rew_this_update)
-        adv_hist.append(avg_adv_this_update)
-        update_idx.append(update)
-        raw_reward.append(rew_buf)
-
-        # Logging
         if update % tcfg.log_interval == 0:
-            avg_rew = float(np.mean(rew_np)) if len(rew_np) > 0 else 0.0
-            print(f"[Update {update:04d}] steps={global_step} avg_step_reward={avg_rew:.3f} "
-                  f"adv_mean={adv_np.mean():.3f} ret_mean={ret_np.mean():.3f} "
-                  f"success_total={info.get('success_total', -1)} blocking_total={info.get('blocking_total', -1)} "
-                  f"ep_idx={info.get('episode_idx', -1)}")
+            print(f"[Update {update:04d}] steps={global_step} ep_return={mean_ep_ret:.2f} "
+                  f"(n_ep={len(finished_returns)}) ent={stats['entropy']:.3f} "
+                  f"kl={stats['approx_kl']:.4f} clipfrac={stats['clipfrac']:.3f} "
+                  f"v_loss={stats['v_loss']:.3f}", flush=True)
 
-        # Save
         if update % tcfg.save_interval == 0:
-            ckpt_path = os.path.join(tcfg.save_dir, f"grid6_setppo_update{update:04d}.pt")
-            torch.save({
-                "model": agent.net.state_dict(),
-                "optimizer": agent.opt.state_dict(),
-                "update": update,
-                "global_step": global_step,
-            }, ckpt_path)
-            print(f"Saved checkpoint to {ckpt_path}")
+            path = os.path.join(tcfg.save_dir, f"NSFNET_setppo_05_update{update:04d}.pt")
+            torch.save({"model": agent.net.state_dict(), "optimizer": agent.opt.state_dict(),
+                        "update": update, "global_step": global_step}, path)
 
-    # Final save
-    ckpt_path = os.path.join(tcfg.save_dir, f"grid6_setppo_final.pt")
-    torch.save({
-        "model": agent.net.state_dict(),
-        "optimizer": agent.opt.state_dict(),
-        "update": tcfg.total_updates,
-        "global_step": global_step,
-    }, ckpt_path)
-    print(f"Training finished. Final checkpoint saved to {ckpt_path}")
+    final = os.path.join(tcfg.save_dir, "NSFNET_setppo_05_final.pt")
+    torch.save({"model": agent.net.state_dict(), "optimizer": agent.opt.state_dict(),
+                "update": tcfg.total_updates, "global_step": global_step}, final)
+    print(f"Training finished. Final checkpoint saved to {final}")
 
-    # 로그 설정
-    logging.basicConfig(
-        filename='Grid6_reward.log',
-        level=logging.INFO,
-        format='%(asctime)s - %(message)s'
-    )
-    # 로그로 저장
-    for item in raw_reward:
-        logging.info(item)
+    logging.basicConfig(filename="NSFNET_reward.log", level=logging.INFO, format="%(asctime)s - %(message)s")
+    for u, r, s in zip(update_idx, ep_returns_hist, stats_hist):
+        logging.info({"update": u, "ep_return": r, **s})
 
-    # Plot graph
     try:
-        fig, ax = plt.subplots(2, 1, figsize=(8, 6), sharex=True)
-        ax[0].plot(update_idx, reward_hist, label="avg step reward")
-        ax[0].set_ylabel("Avg Step Reward")
-        ax[0].grid(True, alpha=0.3)
-        ax[0].legend()
-
-        ax[1].plot(update_idx, adv_hist, label="adv mean")
-        ax[1].set_xlabel("Update")
-        ax[1].set_ylabel("Advantage Mean")
-        ax[1].grid(True, alpha=0.3)
-        ax[1].legend()
-
+        fig, ax = plt.subplots(3, 1, figsize=(8, 8), sharex=True)
+        ax[0].plot(update_idx, ep_returns_hist); ax[0].set_ylabel("Mean episode return")
+        ax[1].plot(update_idx, [s["entropy"] for s in stats_hist]); ax[1].set_ylabel("Entropy")
+        ax[2].plot(update_idx, [s["approx_kl"] for s in stats_hist]); ax[2].set_ylabel("Approx KL")
+        ax[2].set_xlabel("Update")
+        for a in ax: a.grid(True, alpha=0.3)
         fig.tight_layout()
-        png_path = os.path.join(tcfg.save_dir, "grid6_reward_adv_curves.png")
-        fig.savefig(png_path, dpi=150)
+        fig.savefig(os.path.join(tcfg.save_dir, "NSFNET_training_05_curves.png"), dpi=150)
         plt.close(fig)
-        print(f"Saved curves to {png_path}")
     except Exception as e:
         print("Plotting failed:", e)
+    return agent
 
 
 if __name__ == "__main__":
