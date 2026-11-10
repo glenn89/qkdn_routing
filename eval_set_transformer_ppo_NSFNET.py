@@ -489,8 +489,8 @@ def main():
     ap.add_argument("--seeds", type=int, nargs="+", default=[101, 202, 303, 404, 505],  # [101, 202, 303, 404, 505]
                     help="학습 seed와 다른 값을 쓰세요")
     ap.add_argument("--N", type=int, default=14)
-    ap.add_argument("--R_max", type=int, default=60)
-    ap.add_argument("--max_time_step", type=int, default=60)
+    ap.add_argument("--R_max", type=int, default=90)
+    ap.add_argument("--max_time_step", type=int, default=90)
     ap.add_argument("--device", default="cuda")
     ap.add_argument("--ppo_sample", action="store_true", help="PPO를 argmax 대신 확률적으로 샘플링")
     ap.add_argument("--out_dir", default="results/NSFNET")
