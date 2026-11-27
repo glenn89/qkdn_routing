@@ -67,10 +67,24 @@ def _resolve_device(device) -> torch.device:
     return device
 
 
-def load_agent(checkpoint_path: str, env, device: torch.device):
-    """env 설정(N, R_max, 요청 feature 차원)으로 네트워크를 만들고 가중치 로드"""
-    agent = T.PPOAgent(env.max_requests_per_step, env.N, env.req_feat_dim,
-                       T.PPOConfig(device=str(device)))
+_module_cache = {}
+
+
+def _get_module(name: Optional[str]):
+    """학습 모듈 이름 → 모듈 (None이면 기본 모듈 T). 모델 구조(Set Transformer / Transformer)는 이 모듈이 결정"""
+    if name is None:
+        return T
+    if name not in _module_cache:
+        _module_cache[name] = importlib.import_module(name)
+    return _module_cache[name]
+
+
+def load_agent(checkpoint_path: str, env, device: torch.device, module=None):
+    """env 설정(N, R_max, 요청 feature 차원)으로 네트워크를 만들고 가중치 로드.
+    module: 네트워크 정의를 가져올 학습 모듈 (None이면 기본 모듈 T = Set Transformer)"""
+    M = module or T
+    agent = M.PPOAgent(env.max_requests_per_step, env.N, env.req_feat_dim,
+                       M.PPOConfig(device=str(device)))
     state = _maybe_extract_state_dict(torch.load(checkpoint_path, map_location=device))
     try:
         agent.net.load_state_dict(state)
@@ -279,10 +293,13 @@ def evaluate_policy(
         ppo_ckpts["ppo"] = checkpoint_path
 
     if policy_name in ppo_ckpts:
-        ckpt = ppo_ckpts[policy_name]
+        # 값이 "경로"면 기본 모듈(Set Transformer), ("학습 모듈 이름", "경로")면 그 모듈의 네트워크로 로드
+        entry = ppo_ckpts[policy_name]
+        module_name, ckpt = entry if isinstance(entry, tuple) else (None, entry)
         if not ckpt or not os.path.exists(ckpt):
             raise FileNotFoundError(f"checkpoint not found for {policy_name}: {ckpt}")
-        policy = make_ppo_policy(load_agent(ckpt, env, device), device, greedy=not ppo_sample)
+        agent = load_agent(ckpt, env, device, module=_get_module(module_name))
+        policy = make_ppo_policy(agent, device, greedy=not ppo_sample)
     elif policy_name == "random":
         policy = make_random_policy(np.random.default_rng(seed))
     elif policy_name in HEURISTICS:
@@ -482,15 +499,19 @@ def main():
     ap.add_argument("--ckpt", default="./checkpoints/COST266_setppo_final.pt", help="'ppo' 체크포인트")
     ap.add_argument("--ckpt_05", default="./checkpoints/COST266_setppo_05_final.pt", help="'ppo_05' 체크포인트")
     ap.add_argument("--ckpt_10", default="./checkpoints/COST266_setppo_10_final.pt", help="'ppo_10' 체크포인트")
+    ap.add_argument("--ckpt_tf", default="./checkpoints/COST266_setppo_update0800.pt", help="'Transformer' 체크포인트")
+    ap.add_argument("--ckpt_tf_05", default="./checkpoints/COST266_setppo_05_update0800.pt", help="'Transformer_05' 체크포인트")
+    ap.add_argument("--ckpt_tf_10", default="./checkpoints/COST266_setppo_10_update0800.pt", help="'Transformer_10' 체크포인트")
     ap.add_argument("--policies", nargs="+",
-                    default=["SetTransformer", "SetTransformer_05", "SetTransformer_10", "random", "fifo", "min_hop_feasible"])
+                    default=["SetTransformer", "SetTransformer_05", "SetTransformer_10", "Transformer",
+                             "Transformer_05", "Transformer_10", "fifo", "min_hop_feasible"])
     ap.add_argument("--episodes", type=int, default=1000)
     ap.add_argument("--warmup", type=int, default=20, help="집계에서 제외할 초기 에피소드 수")
     ap.add_argument("--seeds", type=int, nargs="+", default=[101, 202, 303, 404, 505],  # [101, 202, 303, 404, 505]
                     help="학습 seed와 다른 값을 쓰세요")
     ap.add_argument("--N", type=int, default=28)
-    ap.add_argument("--R_max", type=int, default=90)
-    ap.add_argument("--max_time_step", type=int, default=90)
+    ap.add_argument("--R_max", type=int, default=30)
+    ap.add_argument("--max_time_step", type=int, default=30)
     ap.add_argument("--device", default="cuda")
     ap.add_argument("--ppo_sample", action="store_true", help="PPO를 argmax 대신 확률적으로 샘플링")
     ap.add_argument("--out_dir", default="results/COST266")
@@ -499,14 +520,20 @@ def main():
     args = ap.parse_args()
 
     # PPO 정책 이름 → 체크포인트 (PPO 모델을 더 추가하려면 여기에 한 줄 + --ckpt_xx 인자 추가)
+    #   - 값이 경로만 있으면: 기본 학습 모듈(Set Transformer)의 네트워크로 로드
+    #   - 값이 ("학습 모듈 이름", 경로)면: 그 모듈의 네트워크로 로드 (구조가 다른 모델용)
     ppo_ckpts = {
         "SetTransformer": args.ckpt,
         "SetTransformer_05": args.ckpt_05,
         "SetTransformer_10": args.ckpt_10,
+        "Transformer": args.ckpt_tf,
+        "Transformer_05": args.ckpt_tf_05,
+        "Transformer_10": args.ckpt_tf_10,
     }
 
     policies = list(args.policies)
-    for name, ckpt in ppo_ckpts.items():
+    for name, entry in ppo_ckpts.items():
+        ckpt = entry[1] if isinstance(entry, tuple) else entry
         if name in policies and not os.path.exists(ckpt):
             print(f"[warn] checkpoint 없음 ({ckpt}) → {name}은(는) 건너뜁니다.")
             policies.remove(name)

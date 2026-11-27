@@ -22,7 +22,7 @@
   "avg_queueing_delay": 0.05526047199964523,
   "p95_queueing_delay": 0.0,
   "max_queueing_delay": 3.0,
-  "eval_seconds": 159.6,
+  "eval_seconds": 485.6,
   "key_utilization": 0.5222602317097852,
   "n_pairs": 378,
   "n_active_pairs": 378,

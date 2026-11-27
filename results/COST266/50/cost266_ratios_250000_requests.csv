@@ -1,0 +1,7 @@
+﻿Algorithm,Generated Requests,Served Requests,Expired Requests (estimated total),Overflow Requests (residual),Service Ratio (%),Overflow Ratio (%),Expired Ratio (%)
+SetTransformer (α=0.0),250000,152732,80060,17208,0.610928,0.32024,0.32024
+SetTransformer (α=0.5),250000,142052,40581,67366,0.568208,0.162324,0.162324
+SetTransformer (α=1.0),250000,143463,34874,71663,0.573852,0.139496,0.139496
+Transformer (α=0.0),250000,150713,81148,18139,0.602852,0.324592,0.324592
+FIFO,250000,144273,15329,90398,0.577092,0.061316,0.061316
+SPF,250000,152500,79518,17982,0.61,0.318072,0.318072

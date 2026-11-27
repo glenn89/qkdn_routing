@@ -499,17 +499,19 @@ def main():
     ap.add_argument("--ckpt", default="./checkpoints/COST266_setppo_final.pt", help="'ppo' 체크포인트")
     ap.add_argument("--ckpt_05", default="./checkpoints/COST266_setppo_05_final.pt", help="'ppo_05' 체크포인트")
     ap.add_argument("--ckpt_10", default="./checkpoints/COST266_setppo_10_final.pt", help="'ppo_10' 체크포인트")
-    ap.add_argument("--ckpt_tf", default="./checkpoints/COST266_tfppo_05_final.pt", help="'Transformer' 체크포인트")
+    ap.add_argument("--ckpt_tf", default="./checkpoints/COST266_setppo_update0900.pt", help="'Transformer' 체크포인트")
+    ap.add_argument("--ckpt_tf_05", default="./checkpoints/COST266_setppo_05_update0900.pt", help="'Transformer_05' 체크포인트")
+    ap.add_argument("--ckpt_tf_10", default="./checkpoints/COST266_setppo_10_update0900.pt", help="'Transformer_10' 체크포인트")
     ap.add_argument("--policies", nargs="+",
                     default=["SetTransformer", "SetTransformer_05", "SetTransformer_10", "Transformer",
-                             "random", "fifo", "min_hop_feasible"])
+                             "Transformer_05", "Transformer_10", "fifo", "min_hop_feasible"])
     ap.add_argument("--episodes", type=int, default=1000)
     ap.add_argument("--warmup", type=int, default=20, help="집계에서 제외할 초기 에피소드 수")
-    ap.add_argument("--seeds", type=int, nargs="+", default=[101],  # [101, 202, 303, 404, 505]
+    ap.add_argument("--seeds", type=int, nargs="+", default=[101, 202, 303, 404, 505],  # [101, 202, 303, 404, 505]
                     help="학습 seed와 다른 값을 쓰세요")
     ap.add_argument("--N", type=int, default=28)
-    ap.add_argument("--R_max", type=int, default=50)
-    ap.add_argument("--max_time_step", type=int, default=50)
+    ap.add_argument("--R_max", type=int, default=30)
+    ap.add_argument("--max_time_step", type=int, default=30)
     ap.add_argument("--device", default="cuda")
     ap.add_argument("--ppo_sample", action="store_true", help="PPO를 argmax 대신 확률적으로 샘플링")
     ap.add_argument("--out_dir", default="results/COST266")
@@ -525,6 +527,8 @@ def main():
         "SetTransformer_05": args.ckpt_05,
         "SetTransformer_10": args.ckpt_10,
         "Transformer": ("train_transformer_ppo_baseline", args.ckpt_tf),
+        "Transformer_05": ("train_transformer_ppo_baseline", args.ckpt_tf_05),
+        "Transformer_10": ("train_transformer_ppo_baseline", args.ckpt_tf_10),
     }
 
     policies = list(args.policies)
